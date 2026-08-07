@@ -392,10 +392,11 @@
     <h3>過去ログを読み込む</h3>
     <div class="import-hint">
       過去に送った「ささきのささやき」のメール本文を、<b>複数まとめてそのまま貼り付け</b>できます。<br>
-      各号の末尾にある「<b>今週もよろしくお願いいたします。</b>」を区切りとして自動的にレコードに分割し、本文中の<b>日付</b>らしき記述（送信日時・YYYY年M月D日など）を各レコードの日付として拾います。
+      各号の末尾にある「<b>今週もよろしくお願いいたします。</b>」を区切りとして自動的にレコードに分割し、本文中の<b>日付</b>らしき記述（送信日時・YYYY年M月D日・YYYYMMDDなど）を各レコードの日付として拾います。<br>
+      一度に貼り付けられる量に限りがある場合は、<b>何回かに分けて貼り付け→「解析する」を繰り返して</b>ください。解析結果は下に積み上がり、同じ号（Vol番号）は自動的に重複除外されます。
     </div>
-    <textarea id="importText" rows="8" style="width:100%;border:1px solid var(--line);border-radius:3px;padding:10px;font-size:13px;font-family:inherit;background:var(--paper);"
-      placeholder="ここに過去のメール本文をまとめて貼り付けてください"></textarea>
+    <textarea id="importText" rows="10" style="width:100%;border:1px solid var(--line);border-radius:3px;padding:10px;font-size:13px;font-family:inherit;background:var(--paper);"
+      placeholder="ここに過去のメール本文を貼り付けてください（分割して複数回貼り付け可）"></textarea>
     <div style="display:flex;gap:8px;margin:10px 0 4px;">
       <button type="button" class="btn fude" id="importParseBtn">解析する</button>
       <span id="importParseSummary" style="align-self:center;font-size:12.5px;color:var(--ink-soft);"></span>
@@ -1086,29 +1087,17 @@ function parseBulkText(raw){
 }
 
 let importCandidates = [];
-document.getElementById('importBtn').addEventListener('click', ()=>{
-  document.getElementById('importText').value = '';
-  document.getElementById('importPreviewList').innerHTML = '';
-  document.getElementById('importParseSummary').textContent = '';
-  document.getElementById('importCommitBtn').disabled = true;
-  importCandidates = [];
-  document.getElementById('importModal').classList.remove('hidden');
-});
-document.getElementById('importCancelBtn').addEventListener('click', ()=>{
-  document.getElementById('importModal').classList.add('hidden');
-});
-document.getElementById('importParseBtn').addEventListener('click', ()=>{
-  const raw = document.getElementById('importText').value;
-  importCandidates = parseBulkText(raw);
+
+function recordKey(r){
+  return (r.vol && r.vol.trim()) ? 'vol:'+r.vol.trim() : ('dt:'+(r.date||'')+'|'+(r.title||''));
+}
+function sortByDateDesc(arr){
+  arr.sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (Number(b.vol)||0)-(Number(a.vol)||0));
+}
+function renderImportPreview(){
   const list = document.getElementById('importPreviewList');
   list.innerHTML = '';
-  const existingVols = new Set(STATE.issues.map(i=>i.vol));
-  if(importCandidates.length === 0){
-    document.getElementById('importParseSummary').textContent = '号を検出できませんでした。「ささきのささやきVol.〜」の行が含まれているかご確認ください。';
-    document.getElementById('importCommitBtn').disabled = true;
-    return;
-  }
-  document.getElementById('importParseSummary').textContent = `${importCandidates.length}件の号を検出しました。内容を確認してインポートしてください。`;
+  const existingVols = new Set(STATE.issues.map(i=>i.vol).filter(Boolean));
   importCandidates.forEach((rec, idx)=>{
     const dup = rec.vol && existingVols.has(rec.vol);
     const plain = (rec.bodyHtml||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
@@ -1126,7 +1115,43 @@ document.getElementById('importParseBtn').addEventListener('click', ()=>{
       </div>`;
     list.appendChild(div);
   });
-  document.getElementById('importCommitBtn').disabled = false;
+  document.getElementById('importCommitBtn').disabled = importCandidates.length === 0;
+}
+
+document.getElementById('importBtn').addEventListener('click', ()=>{
+  document.getElementById('importText').value = '';
+  document.getElementById('importPreviewList').innerHTML = '';
+  document.getElementById('importParseSummary').textContent = '';
+  document.getElementById('importCommitBtn').disabled = true;
+  importCandidates = [];
+  document.getElementById('importModal').classList.remove('hidden');
+});
+document.getElementById('importCancelBtn').addEventListener('click', ()=>{
+  document.getElementById('importModal').classList.add('hidden');
+});
+document.getElementById('importParseBtn').addEventListener('click', ()=>{
+  const raw = document.getElementById('importText').value;
+  const parsed = parseBulkText(raw);
+  if(parsed.length === 0 && importCandidates.length === 0){
+    document.getElementById('importParseSummary').textContent = '号を検出できませんでした。「ささきのささやきVol.〜」の行が含まれているかご確認ください。';
+    return;
+  }
+  const seenKeys = new Set(importCandidates.map(recordKey));
+  let added = 0, skippedDup = 0;
+  parsed.forEach(rec=>{
+    const key = recordKey(rec);
+    if(seenKeys.has(key)){ skippedDup++; return; }
+    seenKeys.add(key);
+    importCandidates.push(rec);
+    added++;
+  });
+  sortByDateDesc(importCandidates);
+  renderImportPreview();
+  document.getElementById('importText').value = '';
+  let msg = `今回 ${added}件を追加（合計 ${importCandidates.length}件）`;
+  if(skippedDup>0) msg += `／重複のため ${skippedDup}件をスキップ`;
+  msg += '。テキスト量が多い場合は続けて貼り付け→解析を繰り返せます。';
+  document.getElementById('importParseSummary').textContent = msg;
 });
 document.getElementById('importPreviewList').addEventListener('change', e=>{
   const dateInput = e.target.closest('.ii-date');
@@ -1136,10 +1161,13 @@ document.getElementById('importPreviewList').addEventListener('change', e=>{
 });
 document.getElementById('importCommitBtn').addEventListener('click', ()=>{
   const checks = document.querySelectorAll('#importPreviewList input[type=checkbox]');
-  let count = 0;
+  const existingKeys = new Set(STATE.issues.map(recordKey));
+  let count = 0, skippedExisting = 0;
   checks.forEach(cb=>{
     if(cb.checked){
       const rec = importCandidates[Number(cb.dataset.idx)];
+      if(existingKeys.has(recordKey(rec))){ skippedExisting++; return; }
+      existingKeys.add(recordKey(rec));
       STATE.issues.push(rec);
       count++;
     }
@@ -1147,8 +1175,10 @@ document.getElementById('importCommitBtn').addEventListener('click', ()=>{
   if(count>0){
     persist();
     renderList();
-    toast(`${count}件の号をインポートしました`);
   }
+  let msg = count>0 ? `${count}件の号をインポートしました` : 'インポートする号がありませんでした';
+  if(skippedExisting>0) msg += `（既存と重複する${skippedExisting}件はスキップ）`;
+  toast(msg);
   document.getElementById('importModal').classList.add('hidden');
 });
 
