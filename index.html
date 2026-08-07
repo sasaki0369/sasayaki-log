@@ -294,6 +294,8 @@
           <input type="text" id="f_greeting" placeholder="社会インフラデザイン部の皆さま">
         </div>
       </div>
+      <button type="button" class="btn fude" id="autoFillBtn" style="width:100%;margin-top:4px;">🔄 訪問録・飲みメモから自動反映</button>
+      <div id="autoFillStatus" style="font-size:11px;color:var(--ink-soft);margin-top:6px;"></div>
     </div>
 
     <div class="sheet">
@@ -314,8 +316,8 @@
     </div>
 
     <div class="sheet">
-      <div class="section-title">前週の行動履歴<span class="hint">訪問録から転記</span></div>
-      <div class="import-hint"><b>転記のしかた：</b>「訪問録」アプリの週次集計を見ながら、カテゴリごとの今週の回数と行き先メモを入力してください。累計は自動で積み上がります。</div>
+      <div class="section-title">前週の行動履歴<span class="hint">訪問録と自動連携</span></div>
+      <div class="import-hint"><b>自動反映：</b>上の「🔄 自動反映」ボタンで「訪問録」アプリの週次集計を取得できます。手入力・修正も可能です。</div>
       <table class="datatbl" id="visitTable">
         <thead><tr><th style="width:22%">区分</th><th style="width:16%">今週</th><th>行き先・目的メモ</th><th style="width:22%">四半期平均参考</th><th></th></tr></thead>
         <tbody></tbody>
@@ -330,8 +332,8 @@
     </div>
 
     <div class="sheet">
-      <div class="section-title">前週の飲み<span class="hint">飲みメモから転記</span></div>
-      <div class="import-hint"><b>転記のしかた：</b>「飲みメモ」アプリの週次集計を見ながら、区分ごとの前週実績と今週の予定件数を入力してください。</div>
+      <div class="section-title">前週の飲み<span class="hint">飲みメモと自動連携</span></div>
+      <div class="import-hint"><b>自動反映：</b>上の「🔄 自動反映」ボタンで「飲みメモ」アプリの週次集計を取得できます。手入力・修正も可能です。</div>
       <table class="datatbl" id="drinkTable">
         <thead><tr><th style="width:20%">区分</th><th style="width:14%">前週実績</th><th style="width:14%">今週予定</th><th>年平均参考</th><th></th></tr></thead>
         <tbody></tbody>
@@ -339,6 +341,7 @@
       <button type="button" class="add-row-btn" id="addDrinkCat">＋ 区分を追加</button>
       <div class="total-line">前週合計：<b id="drinkTotalWeek">0</b>　／　累計：<b id="drinkTotalCum">0</b>　／　今週予定合計：<b id="drinkTotalPlan">0</b></div>
     </div>
+
 
     <div class="sheet">
       <div class="section-title">プレビュー</div>
@@ -460,11 +463,23 @@ async function tryInitFirebase(){
   try{
     await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
     await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js');
+    await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js');
     firebase.initializeApp(firebaseConfig);
     db = firebase.database();
-    fbEnabled = true;
-    initFirebaseSync();
-    document.getElementById('syncDot').className = 'on';
+    let authReady = false;
+    firebase.auth().onAuthStateChanged((user)=>{
+      if(user && !authReady){
+        authReady = true;
+        fbEnabled = true;
+        initFirebaseSync();
+        document.getElementById('syncDot').className = 'on';
+      }
+    });
+    firebase.auth().signInAnonymously().catch((err)=>{
+      console.warn('Firebase auth failed', err);
+      fbEnabled = false;
+      document.getElementById('syncDot').className = 'off';
+    });
   }catch(e){
     console.warn('Firebase init skipped', e);
     fbEnabled = false;
@@ -660,6 +675,7 @@ function openEditor(id){
   renderVisitTable(iss);
   renderDrinkTable(iss);
   renderSchedule(iss);
+  updateAutoFillStatus();
   updatePreview();
   window.scrollTo(0,0);
 }
@@ -697,7 +713,7 @@ function renderVisitTable(iss){
 }
 function visitRow(row, idx, iss){
   const tr = document.createElement('tr');
-  const cum = cumulativeFor(STATE.issues.filter(i=>i.id!==iss.id).concat([iss]), iss.date, row.cat, 'visit');
+  if(row.cum !== undefined && row.cum !== null && row.cum !== '') tr.dataset.cum = row.cum;
   tr.innerHTML = `
     <td class="cat-cell">${escHtml(row.cat)}</td>
     <td><input type="number" min="0" value="${row.week}" data-f="week" data-idx="${idx}" class="v-week"></td>
@@ -710,24 +726,32 @@ function readTable(tableId){
   const rows = [];
   document.querySelectorAll('#'+tableId+' tbody tr').forEach(tr=>{
     const cat = tr.querySelector('.cat-cell').textContent;
+    const cumAttr = tr.dataset.cum;
+    const cum = (cumAttr !== undefined && cumAttr !== '') ? Number(cumAttr) : undefined;
     if(tableId==='visitTable'){
       rows.push({
-        cat, week: tr.querySelector('.v-week').value, note: tr.querySelector('.v-note').value, qavg: tr.querySelector('.v-qavg').value
+        cat, week: tr.querySelector('.v-week').value, note: tr.querySelector('.v-note').value, qavg: tr.querySelector('.v-qavg').value,
+        ...(cum!==undefined ? {cum} : {})
       });
     }else{
       rows.push({
-        cat, week: tr.querySelector('.d-week').value, plan: tr.querySelector('.d-plan').value, yavg: tr.querySelector('.d-yavg').value
+        cat, week: tr.querySelector('.d-week').value, plan: tr.querySelector('.d-plan').value, yavg: tr.querySelector('.d-yavg').value,
+        ...(cum!==undefined ? {cum} : {})
       });
     }
   });
   return rows;
+}
+function resolveCum(r, allIssuesWithSelf, dateStr, field){
+  if(r.cum !== undefined && r.cum !== null && r.cum !== '') return Number(r.cum);
+  return cumulativeFor(allIssuesWithSelf, dateStr, r.cat, field);
 }
 function updateVisitTotals(iss){
   const rows = readTable('visitTable');
   const wk = rows.reduce((s,r)=>s+(Number(r.week)||0),0);
   let cum = 0;
   rows.forEach(r=>{
-    cum += cumulativeFor(STATE.issues.filter(i=>i.id!==iss.id).concat([{...iss, visit:rows}]), iss.date, r.cat, 'visit');
+    cum += resolveCum(r, STATE.issues.filter(i=>i.id!==iss.id).concat([{...iss, visit:rows}]), iss.date, 'visit');
   });
   document.getElementById('visitTotalWeek').textContent = wk;
   document.getElementById('visitTotalCum').textContent = cum;
@@ -753,6 +777,7 @@ function renderDrinkTable(iss){
   tbody.innerHTML = '';
   (iss.drink||[]).forEach((row,idx)=>{
     const tr = document.createElement('tr');
+    if(row.cum !== undefined && row.cum !== null && row.cum !== '') tr.dataset.cum = row.cum;
     tr.innerHTML = `
       <td class="cat-cell">${escHtml(row.cat)}</td>
       <td><input type="number" min="0" value="${row.week}" data-idx="${idx}" class="d-week"></td>
@@ -769,7 +794,7 @@ function updateDrinkTotals(iss){
   const plan = rows.reduce((s,r)=>s+(Number(r.plan)||0),0);
   let cum = 0;
   rows.forEach(r=>{
-    cum += cumulativeFor(STATE.issues.filter(i=>i.id!==iss.id).concat([{...iss, drink:rows}]), iss.date, r.cat, 'drink');
+    cum += resolveCum(r, STATE.issues.filter(i=>i.id!==iss.id).concat([{...iss, drink:rows}]), iss.date, 'drink');
   });
   document.getElementById('drinkTotalWeek').textContent = wk;
   document.getElementById('drinkTotalCum').textContent = cum;
@@ -841,6 +866,148 @@ document.getElementById('linkOkBtn').addEventListener('click', ()=>{
   }
 });
 
+/* ---------- 訪問録・飲みメモからの自動反映 ---------- */
+const DRINK_TAG_MAP = { '部内':'部内', '本社内':'本社内', '社内':'社内', 'Ｇ内':'グループ内', 'ＯＢ等':'OB等', '社外':'社外' };
+
+function addDaysYMD(dateStr, n){
+  const d = new Date(dateStr+'T00:00:00');
+  d.setDate(d.getDate()+n);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+// ささやきログの日付（月曜想定）Mを起点に：
+// 前週＝前々日曜(M-8)〜前土曜(M-2)　／　今週＝前日曜(M-1)〜翌土曜(M+5)
+function computeWeekRanges(mondayStr){
+  return {
+    lastWeekStart: addDaysYMD(mondayStr, -8),
+    lastWeekEnd:   addDaysYMD(mondayStr, -2),
+    thisWeekStart: addDaysYMD(mondayStr, -1),
+    thisWeekEnd:   addDaysYMD(mondayStr, 5),
+  };
+}
+function updateAutoFillStatus(){
+  const dateStr = document.getElementById('f_date').value;
+  const el = document.getElementById('autoFillStatus');
+  if(!el) return;
+  if(!dateStr){ el.textContent = ''; return; }
+  const r = computeWeekRanges(dateStr);
+  el.textContent = `対象期間　前週：${r.lastWeekStart}〜${r.lastWeekEnd}　／　今週：${r.thisWeekStart}〜${r.thisWeekEnd}`;
+}
+
+function buildVisitStatsFromSource(visits, reportConfig, lastWeekStart, lastWeekEnd){
+  const cumStart = (reportConfig && reportConfig.startDate) || '2026-04-01';
+  const baseline = (reportConfig && reportConfig.baseline) || {};
+  const breakdownMode = (reportConfig && reportConfig.breakdownMode) || {};
+  const arr = visits.filter(v=>v && v.date && v.category);
+  const weekArr = arr.filter(v=>v.date>=lastWeekStart && v.date<=lastWeekEnd);
+  const cumArr = arr.filter(v=>v.date>=cumStart && v.date<=lastWeekEnd);
+  const allCats = new Set([...Object.keys(baseline), ...arr.map(v=>v.category)]);
+  const cats = {};
+  allCats.forEach(cat=>{
+    const weekCount = weekArr.filter(v=>v.category===cat).length;
+    const cumCount = cumArr.filter(v=>v.category===cat).length;
+    const baselineArr = (baseline[cat]||[0,0,0,0]).map(n=>Number(n).toFixed(1));
+    const mode = breakdownMode[cat] || 'none';
+    let note = '';
+    if((mode==='weekly'||mode==='both') && weekCount>0){
+      const names = [];
+      weekArr.forEach(v=>{ if(v.category===cat && v.place && names.indexOf(v.place)===-1) names.push(v.place); });
+      if(names.length>0) note += '（'+names.join('、')+'）';
+    }
+    if((mode==='cumulative'||mode==='both') && cumCount>0){
+      const counter = {};
+      cumArr.forEach(v=>{ if(v.category===cat && v.place) counter[v.place] = (counter[v.place]||0)+1; });
+      const entries = Object.entries(counter).sort((a,b)=>b[1]-a[1]);
+      if(entries.length>0){
+        const breakdown = entries.map(e=>e[0]+e[1]).join('、');
+        note += (note ? '' : ' ') + '['+breakdown+']';
+      }
+    }
+    cats[cat] = { week: weekCount, cum: cumCount, qavg: baselineArr.join(','), note };
+  });
+  return { cats, cumStart, baselineYear: reportConfig && reportConfig.baselineYear };
+}
+
+function buildDrinkStatsFromSource(events, weeklySettings, lastWeekStart, lastWeekEnd, thisWeekStart, thisWeekEnd){
+  const cumStart = (weeklySettings && weeklySettings.cumulativeStart) || '2026-04-01';
+  const averages = (weeklySettings && weeklySettings.averages) || {};
+  const year1 = weeklySettings ? weeklySettings.year1 : '';
+  const year2 = weeklySettings ? weeklySettings.year2 : '';
+  function countRange(tag, s, e){
+    return events.filter(ev => ev && ev.datetime && ev.datetime>=s && ev.datetime<=e && (ev.round||'一次会')==='一次会' && (ev.tags||[]).includes(tag)).length;
+  }
+  const cats = {};
+  Object.keys(DRINK_TAG_MAP).forEach(label=>{
+    const tag = DRINK_TAG_MAP[label];
+    const week = countRange(tag, lastWeekStart, lastWeekEnd);
+    const cum = countRange(tag, cumStart, lastWeekEnd);
+    const plan = countRange(tag, thisWeekStart, thisWeekEnd);
+    const avg = averages[tag] || {y1:0, y2:0};
+    cats[label] = { week, cum, plan, yavg: `${(Number(avg.y1)||0).toFixed(1)},${(Number(avg.y2)||0).toFixed(1)}` };
+  });
+  return { cats, cumStart, year1, year2 };
+}
+
+async function fetchLinkedData(){
+  const [visitSnap, visitCfgSnap, nomiSnap, nomiCfgSnap] = await Promise.all([
+    db.ref('visitLog/visits').once('value'),
+    db.ref('visitLog/settings/reportConfig').once('value'),
+    db.ref('nomiMemo/events').once('value'),
+    db.ref('nomiMemo/weeklySettings').once('value'),
+  ]);
+  return {
+    visits: Object.values(visitSnap.val()||{}),
+    reportConfig: visitCfgSnap.val()||{},
+    events: Object.values(nomiSnap.val()||{}),
+    weeklySettings: nomiCfgSnap.val()||{},
+  };
+}
+
+document.getElementById('autoFillBtn').addEventListener('click', async ()=>{
+  const dateStr = document.getElementById('f_date').value;
+  const btn = document.getElementById('autoFillBtn');
+  if(!dateStr){ toast('先に日付（月曜日）を入力してください'); return; }
+  if(!fbEnabled || !db){ toast('Firebase未接続のため自動反映できません'); return; }
+  const ranges = computeWeekRanges(dateStr);
+  const origLabel = btn.textContent;
+  btn.disabled = true; btn.textContent = '取得中…';
+  try{
+    const data = await fetchLinkedData();
+    const visitStats = buildVisitStatsFromSource(data.visits, data.reportConfig, ranges.lastWeekStart, ranges.lastWeekEnd);
+    const drinkStats = buildDrinkStatsFromSource(data.events, data.weeklySettings, ranges.lastWeekStart, ranges.lastWeekEnd, ranges.thisWeekStart, ranges.thisWeekEnd);
+
+    const iss = currentIssue();
+
+    iss.visit = readTable('visitTable');
+    iss.visit.forEach(row=>{
+      const s = visitStats.cats[row.cat];
+      if(s){ row.week = String(s.week); row.note = s.note; row.qavg = s.qavg; row.cum = s.cum; }
+    });
+    renderVisitTable(iss);
+
+    iss.drink = readTable('drinkTable');
+    iss.drink.forEach(row=>{
+      const s = drinkStats.cats[row.cat];
+      if(s){ row.week = String(s.week); row.plan = String(s.plan); row.yavg = s.yavg; row.cum = s.cum; }
+    });
+    renderDrinkTable(iss);
+
+    const [vy, vm] = (visitStats.cumStart||'2026-04-01').split('-');
+    STATE.settings.visitNote = `（[]内は${Number(vy)}.${Number(vm)}からの累計、【】内は${visitStats.baselineYear||''} 1Q,2Q,3Q,4Qの各平均）`;
+    const [dy, dm] = (drinkStats.cumStart||'2026-04-01').split('-');
+    STATE.settings.drinkNote = `（[]内は${Number(dy)}.${Number(dm)}からの累計、()内は今週の予定,【】内は${drinkStats.year1||''}平均,${drinkStats.year2||''}平均）`;
+
+    updatePreview();
+    document.getElementById('autoFillStatus').textContent = `反映済み（前週 ${ranges.lastWeekStart}〜${ranges.lastWeekEnd} ／ 今週 ${ranges.thisWeekStart}〜${ranges.thisWeekEnd}）`;
+    toast('訪問録・飲みメモの週報を反映しました');
+  }catch(e){
+    console.error(e);
+    toast('取得に失敗しました。Firebase接続やセキュリティルールをご確認ください。');
+  }finally{
+    btn.disabled = false; btn.textContent = origLabel;
+  }
+});
+document.getElementById('f_date').addEventListener('change', updateAutoFillStatus);
+
 /* ---------- preview / email build ---------- */
 function padCat(cat, maxLen){
   const len = (cat||'').length;
@@ -869,7 +1036,7 @@ function buildVisitBlockText(rows, dateStr, issId){
   const maxLen = Math.max(1, ...rows.map(r=>(r.cat||'').length));
   const lines = [`■前週の行動履歴${STATE.settings.visitNote||''}`];
   rows.forEach(r=>{
-    const cum = cumulativeFor(STATE.issues.filter(i=>i.id!==issId).concat([{...iss, visit:rows}]), dateStr, r.cat, 'visit');
+    const cum = resolveCum(r, STATE.issues.filter(i=>i.id!==issId).concat([{...iss, visit:rows}]), dateStr, 'visit');
     lines.push(`${padCat(r.cat,maxLen)}：${r.week||'0'}[${cum}]【${r.qavg||''}】${noteSuffix(r.note)}`);
   });
   return lines.join('\n');
@@ -888,7 +1055,7 @@ function buildDrinkBlockText(rows, dateStr, issId){
   let wk=0, plan=0, cumTotal=0;
   rows.forEach(r=>{
     wk += Number(r.week)||0; plan += Number(r.plan)||0;
-    const cum = cumulativeFor(STATE.issues.filter(i=>i.id!==issId).concat([{...iss, drink:rows}]), dateStr, r.cat, 'drink');
+    const cum = resolveCum(r, STATE.issues.filter(i=>i.id!==issId).concat([{...iss, drink:rows}]), dateStr, 'drink');
     cumTotal += cum;
     lines.push(`${padCat(r.cat,maxLen)}：${r.week||'0'}[${cum}](${r.plan||'0'})【${r.yavg||''}】`);
   });
