@@ -364,6 +364,14 @@
       <label>既定の宛先</label>
       <input type="text" id="cfg_greeting" placeholder="社会インフラデザイン部の皆さま">
     </div>
+    <div class="field" style="margin-bottom:14px;">
+      <label>行動履歴の注記（■前週の行動履歴の後ろに付く説明文）</label>
+      <input type="text" id="cfg_visitNote" placeholder="（[]内は2026.4からの累計、【】内は2025 1Q,2Q,3Q,4Qの各平均）">
+    </div>
+    <div class="field" style="margin-bottom:14px;">
+      <label>飲みの注記（■前週の飲みの後ろに付く説明文）</label>
+      <input type="text" id="cfg_drinkNote" placeholder="（[]内は2026.4からの累計、()内は今週の予定,【】内は2024平均,2025平均）">
+    </div>
     <div class="field" style="margin-bottom:6px;">
       <label>行動履歴の区分</label>
     </div>
@@ -466,6 +474,8 @@ async function tryInitFirebase(){
 const DEFAULT_VISIT_CATS = ['初台','事業部','支店','集約組織','協力会社','Ｇ会社','社外','イベント','現場'];
 const DEFAULT_DRINK_CATS = ['部内','本社内','社内','Ｇ内','ＯＢ等','社外'];
 const DEFAULT_GREETING = '社会インフラデザイン部の皆さま';
+const DEFAULT_VISIT_NOTE = '（[]内は2026.4からの累計、【】内は2025 1Q,2Q,3Q,4Qの各平均）';
+const DEFAULT_DRINK_NOTE = '（[]内は2026.4からの累計、()内は今週の予定,【】内は2024平均,2025平均）';
 const DAYS = [['mon','月'],['tue','火'],['wed','水'],['thu','木'],['fri','金'],['sat','土'],['sun','日']];
 
 let STATE = {
@@ -474,6 +484,8 @@ let STATE = {
     greeting: DEFAULT_GREETING,
     visitCats: DEFAULT_VISIT_CATS.slice(),
     drinkCats: DEFAULT_DRINK_CATS.slice(),
+    visitNote: DEFAULT_VISIT_NOTE,
+    drinkNote: DEFAULT_DRINK_NOTE,
   }
 };
 let currentIssueId = null;
@@ -502,6 +514,8 @@ function initFirebaseSync(){
       STATE = val;
       STATE.issues = STATE.issues || [];
       STATE.settings = STATE.settings || {greeting:DEFAULT_GREETING, visitCats:DEFAULT_VISIT_CATS.slice(), drinkCats:DEFAULT_DRINK_CATS.slice()};
+      if(STATE.settings.visitNote === undefined) STATE.settings.visitNote = DEFAULT_VISIT_NOTE;
+      if(STATE.settings.drinkNote === undefined) STATE.settings.drinkNote = DEFAULT_DRINK_NOTE;
       saveLocal();
       renderList();
     }
@@ -828,36 +842,62 @@ document.getElementById('linkOkBtn').addEventListener('click', ()=>{
 });
 
 /* ---------- preview / email build ---------- */
-function buildVisitTableHtml(rows, dateStr, issId){
+function padCat(cat, maxLen){
+  const len = (cat||'').length;
+  return (cat||'') + '　'.repeat(Math.max(0, maxLen-len));
+}
+function sumAvgStrings(rows, field){
+  const arrs = rows.map(r=>(r[field]||'').split(',').map(s=>s.trim()).filter(s=>s!=='').map(s=>parseFloat(s)));
+  const validArrs = arrs.filter(a=>a.length && a.every(n=>!isNaN(n)));
+  if(!validArrs.length) return '';
+  const n = Math.max(...validArrs.map(a=>a.length));
+  const sums = [];
+  for(let i=0;i<n;i++){
+    let s=0, has=false;
+    validArrs.forEach(a=>{ if(a[i]!==undefined){ s+=a[i]; has=true; } });
+    if(has) sums.push(Math.round(s*10)/10);
+  }
+  return sums.join(',');
+}
+function noteSuffix(note){
+  const n = (note||'').trim();
+  if(!n) return '';
+  return (n.startsWith('（') || n.startsWith('(')) ? n : (' ' + n);
+}
+function buildVisitBlockText(rows, dateStr, issId){
   const iss = currentIssue();
-  let html = '<table><tr><th>区分</th><th>今週</th><th>累計(2026.4~)</th><th>行き先・目的</th><th>四半期平均参考</th></tr>';
+  const maxLen = Math.max(1, ...rows.map(r=>(r.cat||'').length));
+  const lines = [`■前週の行動履歴${STATE.settings.visitNote||''}`];
   rows.forEach(r=>{
     const cum = cumulativeFor(STATE.issues.filter(i=>i.id!==issId).concat([{...iss, visit:rows}]), dateStr, r.cat, 'visit');
-    html += `<tr><td>${escHtml(r.cat)}</td><td>${escHtml(r.week||'0')}</td><td>${cum}</td><td>${escHtml(r.note)}</td><td>${escHtml(r.qavg)}</td></tr>`;
+    lines.push(`${padCat(r.cat,maxLen)}：${r.week||'0'}[${cum}]【${r.qavg||''}】${noteSuffix(r.note)}`);
   });
-  html += '</table>';
-  return html;
+  return lines.join('\n');
 }
-function buildDrinkTableHtml(rows, dateStr, issId){
+function buildScheduleBlockText(sched){
+  const lines = ['■今週の行動予定（あくまで予定）'];
+  DAYS.forEach(([k,label])=>{
+    if(sched[k]) lines.push(`${label}曜：${sched[k]}`);
+  });
+  return lines.join('\n');
+}
+function buildDrinkBlockText(rows, dateStr, issId){
   const iss = currentIssue();
-  let html = '<table><tr><th>区分</th><th>前週実績</th><th>累計</th><th>今週予定</th><th>年平均参考</th></tr>';
-  let wk=0, plan=0;
+  const maxLen = Math.max(1, '合計'.length, ...rows.map(r=>(r.cat||'').length));
+  const lines = [`■前週の飲み${STATE.settings.drinkNote||''}`];
+  let wk=0, plan=0, cumTotal=0;
   rows.forEach(r=>{
     wk += Number(r.week)||0; plan += Number(r.plan)||0;
     const cum = cumulativeFor(STATE.issues.filter(i=>i.id!==issId).concat([{...iss, drink:rows}]), dateStr, r.cat, 'drink');
-    html += `<tr><td>${escHtml(r.cat)}</td><td>${escHtml(r.week||'0')}</td><td>${cum}</td><td>${escHtml(r.plan||'0')}</td><td>${escHtml(r.yavg)}</td></tr>`;
+    cumTotal += cum;
+    lines.push(`${padCat(r.cat,maxLen)}：${r.week||'0'}[${cum}](${r.plan||'0'})【${r.yavg||''}】`);
   });
-  html += `<tr><td><b>合計</b></td><td><b>${wk}</b></td><td></td><td><b>${plan}</b></td><td></td></tr>`;
-  html += '</table>';
-  return html;
+  const totalYavg = sumAvgStrings(rows, 'yavg');
+  lines.push(`${padCat('合計',maxLen)}：${wk}[${cumTotal}](${plan})【${totalYavg}】`);
+  return lines.join('\n');
 }
-function buildScheduleHtml(sched){
-  let html = '<table><tr><th>曜日</th><th>予定</th></tr>';
-  DAYS.forEach(([k,label])=>{
-    if(sched[k]) html += `<tr><td>${label}曜</td><td>${escHtml(sched[k])}</td></tr>`;
-  });
-  html += '</table>';
-  return html;
+function textBlockToHtml(text){
+  return text.split('\n').map(l=>escHtml(l)).join('<br>');
 }
 function buildFullEmailHtml(){
   const iss = currentIssue();
@@ -870,16 +910,17 @@ function buildFullEmailHtml(){
   const greeting = document.getElementById('f_greeting').value.trim() || DEFAULT_GREETING;
   const dateStr = document.getElementById('f_date').value;
 
+  const monoStyle = "font-family:'MS Gothic','ＭＳ ゴシック',monospace;font-size:13px;line-height:1.7;";
+
   let html = `<div style="font-family:sans-serif;">`;
   html += `<p>ささきのささやきVol.${escHtml(vol)}　～${escHtml(title)}～<br>${escHtml(greeting)}</p>`;
   html += `<p>お世話になります。<br>佐々木です。</p>`;
   html += `<div>${bodyHtml}</div>`;
-  html += `<p><b>■前週の行動履歴</b></p>`;
-  html += buildVisitTableHtml(visitRows, dateStr, iss.id);
-  html += `<p><b>■今週の行動予定</b>（あくまで予定）</p>`;
-  html += buildScheduleHtml(sched);
-  html += `<p><b>■前週の飲み</b></p>`;
-  html += buildDrinkTableHtml(drinkRows, dateStr, iss.id);
+  html += `<div style="${monoStyle}">`;
+  html += textBlockToHtml(buildVisitBlockText(visitRows, dateStr, iss.id)) + '<br><br>';
+  html += textBlockToHtml(buildScheduleBlockText(sched)) + '<br><br>';
+  html += textBlockToHtml(buildDrinkBlockText(drinkRows, dateStr, iss.id));
+  html += `</div>`;
   html += `<p>今週もよろしくお願いいたします。</p>`;
   html += `</div>`;
   return html;
@@ -933,6 +974,8 @@ document.getElementById('saveBtn').addEventListener('click', ()=>{
 /* ---------- settings modal ---------- */
 document.getElementById('settingsBtn').addEventListener('click', ()=>{
   document.getElementById('cfg_greeting').value = STATE.settings.greeting || DEFAULT_GREETING;
+  document.getElementById('cfg_visitNote').value = STATE.settings.visitNote || DEFAULT_VISIT_NOTE;
+  document.getElementById('cfg_drinkNote').value = STATE.settings.drinkNote || DEFAULT_DRINK_NOTE;
   renderCfgCatList('catModalListVisit', STATE.settings.visitCats);
   renderCfgCatList('catModalListDrink', STATE.settings.drinkCats);
   document.getElementById('settingsModal').classList.remove('hidden');
@@ -965,6 +1008,8 @@ document.getElementById('cfgAddDrinkCat').addEventListener('click', ()=>{
 });
 document.getElementById('settingsSaveBtn').addEventListener('click', ()=>{
   STATE.settings.greeting = document.getElementById('cfg_greeting').value.trim() || DEFAULT_GREETING;
+  STATE.settings.visitNote = document.getElementById('cfg_visitNote').value;
+  STATE.settings.drinkNote = document.getElementById('cfg_drinkNote').value;
   STATE.settings.visitCats = Array.from(document.querySelectorAll('#catModalListVisit input')).map(i=>i.value.trim()).filter(Boolean);
   STATE.settings.drinkCats = Array.from(document.querySelectorAll('#catModalListDrink input')).map(i=>i.value.trim()).filter(Boolean);
   persist();
@@ -1000,7 +1045,7 @@ function textToBodyHtml(text){
 }
 
 function parseVisitRow(line){
-  const m = line.match(/^([^\s：:][^：:]*?)[：:]\s*(\d+)\s*\[(\d+)\]\s*【([^】]*)】\s*(?:[\[（](.*?)[\]）])?\s*$/);
+  const m = line.match(/^([^\s：:][^：:]*?)[：:]\s*(\d+)\s*\[(\d+)\]\s*【([^】]*)】\s*(.*)$/);
   if(!m) return null;
   return { cat: m[1].trim(), week: m[2], note: (m[5]||'').trim(), qavg: (m[4]||'').trim() };
 }
