@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>ささやきログ</title>
+<style>
+  :root{
+    --paper:#F7F3EA;
+    --paper-deep:#F0EADA;
+    --line:#DED4BC;
+    --line-soft:#EAE2CC;
+    --ink:#2B2620;
+    --ink-soft:#7A7161;
+    --ink-faint:#B0A78F;
+    --seal:#8B3A3A;
+    --seal-soft:#C97B6B;
+    --seal-wash:#F1E1DB;
+    --fude:#3E5C76;
+    --fude-soft:#7C93A8;
+    --fude-wash:#E4EAEF;
+    --ok:#5C7A5A;
+    --shadow: 0 2px 10px rgba(43,38,32,0.08);
+    --radius: 3px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      linear-gradient(var(--line-soft) 1px, transparent 1px);
+    background-size: 100% 34px;
+    background-color:var(--paper);
+    color:var(--ink);
+    font-family:'Hiragino Kaku Gothic ProN','Yu Gothic',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    min-height:100vh;
+    padding-bottom:60px;
+  }
+  ::selection{background:var(--seal-wash);}
+  h1,h2,h3,.mincho{font-family:'Hiragino Mincho ProN','Yu Mincho',serif;}
+  a{color:var(--fude);}
+  button{font-family:inherit;cursor:pointer;}
+
+  /* ---------- header ---------- */
+  header.app-head{
+    position:sticky;top:0;z-index:30;
+    background:rgba(247,243,234,0.92);
+    backdrop-filter:blur(6px);
+    border-bottom:1px solid var(--line);
+    padding:14px 18px;
+    display:flex;align-items:center;gap:12px;
+  }
+  .brand{display:flex;align-items:center;gap:10px;flex:1;min-width:0;}
+  .brand .seal-badge{
+    width:38px;height:38px;border-radius:50%;
+    border:2px solid var(--seal);
+    color:var(--seal);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Hiragino Mincho ProN','Yu Mincho',serif;font-weight:700;font-size:13px;
+    flex-shrink:0;
+    transform:rotate(-6deg);
+    letter-spacing:-1px;
+  }
+  .brand h1{font-size:19px;margin:0;font-weight:700;letter-spacing:.06em;line-height:1.1;}
+  .brand .sub{font-size:10.5px;color:var(--ink-soft);letter-spacing:.12em;}
+  .head-actions{display:flex;gap:8px;flex-shrink:0;}
+  .icon-btn{
+    background:none;border:1px solid var(--line);border-radius:50%;
+    width:34px;height:34px;display:flex;align-items:center;justify-content:center;
+    color:var(--ink-soft);font-size:16px;
+  }
+  .icon-btn:active{background:var(--paper-deep);}
+  #syncDot{width:7px;height:7px;border-radius:50%;background:var(--ink-faint);margin-left:2px;flex-shrink:0;}
+  #syncDot.on{background:var(--ok);}
+  #syncDot.off{background:var(--seal-soft);}
+
+  main{max-width:760px;margin:0 auto;padding:16px 14px 40px;}
+
+  /* ---------- list view ---------- */
+  .toolbar{display:flex;gap:8px;margin-bottom:14px;}
+  .search{
+    flex:1;background:#fff;border:1px solid var(--line);border-radius:var(--radius);
+    padding:9px 12px;font-size:14px;color:var(--ink);
+  }
+  .btn{
+    border-radius:var(--radius);border:1px solid var(--ink);background:var(--ink);color:var(--paper);
+    padding:9px 16px;font-size:13.5px;font-weight:500;letter-spacing:.03em;white-space:nowrap;
+  }
+  .btn.ghost{background:transparent;color:var(--ink);border-color:var(--line);}
+  .btn.seal{background:var(--seal);border-color:var(--seal);color:#fff;}
+  .btn.fude{background:var(--fude);border-color:var(--fude);color:#fff;}
+  .btn:active{transform:translateY(1px);}
+  .btn.sm{padding:6px 12px;font-size:12.5px;}
+
+  .issue-card{
+    background:#fff;border:1px solid var(--line);border-radius:var(--radius);
+    padding:14px 16px;margin-bottom:10px;box-shadow:var(--shadow);
+    display:flex;gap:14px;align-items:flex-start;
+  }
+  .issue-card .stamp{
+    width:44px;height:44px;border-radius:50%;border:2px solid var(--seal);color:var(--seal);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font-family:'Hiragino Mincho ProN','Yu Mincho',serif;flex-shrink:0;transform:rotate(-4deg);
+  }
+  .issue-card .stamp b{font-size:15px;line-height:1;}
+  .issue-card .stamp span{font-size:8px;letter-spacing:.05em;}
+  .issue-card .body{flex:1;min-width:0;}
+  .issue-card .ttl{font-weight:700;font-size:15px;margin:0 0 3px;}
+  .issue-card .meta{font-size:11.5px;color:var(--ink-soft);}
+  .issue-card .snippet{font-size:12.5px;color:var(--ink-soft);margin-top:6px;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  .issue-card .actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0;}
+
+  .empty{
+    text-align:center;padding:60px 20px;color:var(--ink-soft);
+  }
+  .empty .stamp{
+    width:64px;height:64px;border-radius:50%;border:2px dashed var(--ink-faint);
+    margin:0 auto 14px;display:flex;align-items:center;justify-content:center;
+    font-family:'Hiragino Mincho ProN','Yu Mincho',serif;font-size:26px;color:var(--ink-faint);
+  }
+
+  /* ---------- editor view ---------- */
+  .sheet{
+    background:#fff;border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:20px 18px;margin-bottom:16px;
+  }
+  .sheet + .sheet{margin-top:0;}
+  .field-row{display:flex;gap:10px;margin-bottom:10px;}
+  .field{flex:1;min-width:0;}
+  .field label{display:block;font-size:11px;color:var(--ink-soft);letter-spacing:.06em;margin-bottom:4px;}
+  .field input[type=text], .field input[type=date], .field input[type=number], .field textarea{
+    width:100%;border:1px solid var(--line);border-radius:var(--radius);
+    padding:8px 10px;font-size:14px;font-family:inherit;color:var(--ink);background:var(--paper);
+  }
+  .field input:focus, .field textarea:focus, .search:focus{outline:2px solid var(--fude-soft);outline-offset:1px;}
+  .vol-field input{font-family:'Hiragino Mincho ProN','Yu Mincho',serif;font-weight:700;color:var(--seal);}
+
+  .section-title{
+    display:flex;align-items:center;gap:8px;margin:22px 0 10px;
+    font-family:'Hiragino Mincho ProN','Yu Mincho',serif;font-weight:700;font-size:15px;color:var(--fude);
+  }
+  .section-title::before{content:"■";color:var(--fude);font-size:11px;}
+  .section-title .hint{font-family:'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;font-weight:400;font-size:11px;color:var(--ink-faint);margin-left:auto;}
+
+  /* rich text toolbar */
+  .rt-toolbar{
+    display:flex;flex-wrap:wrap;gap:4px;padding:6px;background:var(--paper-deep);
+    border:1px solid var(--line);border-bottom:none;border-radius:var(--radius) var(--radius) 0 0;
+  }
+  .rt-toolbar button{
+    border:1px solid transparent;background:none;border-radius:3px;padding:5px 9px;font-size:12.5px;color:var(--ink);
+  }
+  .rt-toolbar button:active, .rt-toolbar button.active{background:#fff;border-color:var(--line);}
+  .rt-toolbar .sep{width:1px;background:var(--line);margin:3px 4px;}
+  #bodyEditor{
+    min-height:260px;border:1px solid var(--line);border-radius:0 0 var(--radius) var(--radius);
+    padding:14px 12px;font-size:14.5px;line-height:1.85;background:#fff;
+  }
+  #bodyEditor:focus{outline:none;}
+  #bodyEditor h3{font-family:'Hiragino Mincho ProN','Yu Mincho',serif;color:var(--fude);font-size:15px;margin:16px 0 6px;}
+  #bodyEditor h4{font-family:'Hiragino Mincho ProN','Yu Mincho',serif;color:var(--seal);font-size:13.5px;margin:12px 0 4px;}
+  #bodyEditor ul{padding-left:20px;}
+  #bodyEditor:empty:before{content:attr(data-placeholder);color:var(--ink-faint);}
+
+  /* data tables */
+  table.datatbl{width:100%;border-collapse:collapse;font-size:13px;}
+  table.datatbl th{
+    text-align:left;font-weight:500;color:var(--ink-soft);font-size:11px;letter-spacing:.03em;
+    border-bottom:1px solid var(--line);padding:5px 6px;
+  }
+  table.datatbl td{border-bottom:1px solid var(--line-soft);padding:6px 6px;vertical-align:middle;}
+  table.datatbl input{
+    width:100%;border:1px solid var(--line);border-radius:3px;padding:5px 6px;font-size:13px;
+    background:var(--paper);color:var(--ink);
+  }
+  table.datatbl .cat-cell{font-weight:600;white-space:nowrap;}
+  table.datatbl .cum-cell{color:var(--ink-soft);font-variant-numeric:tabular-nums;white-space:nowrap;}
+  table.datatbl .rm-row{background:none;border:none;color:var(--ink-faint);font-size:15px;padding:2px 4px;}
+  .add-row-btn{margin-top:8px;font-size:12px;color:var(--fude);background:none;border:1px dashed var(--fude-soft);border-radius:3px;padding:5px 10px;}
+  .total-line{display:flex;justify-content:flex-end;gap:8px;font-size:12.5px;color:var(--ink-soft);margin-top:6px;}
+  .total-line b{color:var(--seal);}
+
+  .day-grid{display:grid;grid-template-columns:52px 1fr;gap:6px 8px;}
+  .day-grid label{font-size:12.5px;color:var(--ink-soft);align-self:center;font-weight:600;}
+  .day-grid input{border:1px solid var(--line);border-radius:3px;padding:7px 9px;font-size:13.5px;background:var(--paper);}
+
+  .import-hint{
+    font-size:11.5px;color:var(--ink-soft);background:var(--fude-wash);border:1px solid var(--fude-soft);
+    border-radius:3px;padding:8px 10px;margin-bottom:10px;line-height:1.6;
+  }
+  .import-hint b{color:var(--fude);}
+
+  /* preview */
+  #previewBox{
+    background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px;font-size:13px;line-height:1.8;white-space:pre-wrap;font-family:'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;
+    max-height:420px;overflow-y:auto;
+  }
+  #previewBox .pv-body{white-space:normal;margin-bottom:14px;}
+  #previewBox table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:4px;}
+  #previewBox table td, #previewBox table th{border:1px solid #ccc;padding:3px 6px;}
+
+  .sticky-actions{
+    position:sticky;bottom:0;background:linear-gradient(to top, var(--paper) 70%, transparent);
+    padding:14px 0 4px;display:flex;gap:8px;
+  }
+  .sticky-actions .btn{flex:1;}
+
+  .toast{
+    position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+    background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:20px;font-size:13px;
+    box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .25s, transform .25s;z-index:100;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
+
+  .modal-bg{position:fixed;inset:0;background:rgba(43,38,32,.4);z-index:50;display:flex;align-items:flex-end;justify-content:center;}
+  .modal-bg.hidden{display:none;}
+  .modal{background:var(--paper);width:100%;max-width:760px;border-radius:12px 12px 0 0;padding:20px 18px 26px;max-height:82vh;overflow-y:auto;}
+  .modal h3{margin:0 0 12px;font-family:'Hiragino Mincho ProN','Yu Mincho',serif;}
+
+  .cfg-note{font-size:11.5px;color:var(--ink-soft);line-height:1.7;margin-top:10px;}
+  .hidden{display:none !important;}
+  #catModalList{list-style:none;padding:0;margin:0 0 10px;}
+  #catModalList li{display:flex;gap:8px;align-items:center;margin-bottom:6px;}
+  #catModalList input{flex:1;}
+</style>
+</head>
+<body>
+
+<header class="app-head">
+  <div class="brand">
+    <div class="seal-badge">囁</div>
+    <div>
+      <h1>ささやきログ</h1>
+      <div class="sub">SASAYAKI&nbsp;LOG</div>
+    </div>
+  </div>
+  <div id="syncDot" class="off" title="同期状態"></div>
+  <div class="head-actions">
+    <button class="icon-btn" id="settingsBtn" title="設定">⚙</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============ LIST VIEW ============ -->
+  <div id="listView">
+    <div class="toolbar">
+      <input class="search" id="searchInput" type="text" placeholder="号数・タイトル・本文で検索">
+      <button class="btn seal" id="newIssueBtn">＋ 新規号</button>
+    </div>
+    <div id="issueList"></div>
+    <div id="emptyState" class="empty hidden">
+      <div class="stamp">囁</div>
+      <p>まだ号がありません。<br>「＋ 新規号」から今週のささやきを書きましょう。</p>
+    </div>
+  </div>
+
+  <!-- ============ EDITOR VIEW ============ -->
+  <div id="editView" class="hidden">
+
+    <div class="sheet">
+      <div class="field-row">
+        <div class="field vol-field" style="max-width:120px;">
+          <label>Vol.（号数）</label>
+          <input type="text" id="f_vol" placeholder="55">
+        </div>
+        <div class="field">
+          <label>日付</label>
+          <input type="date" id="f_date">
+        </div>
+      </div>
+      <div class="field">
+        <label>タイトル（テーマ）</label>
+        <input type="text" id="f_title" placeholder="例：まちづくりとは">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>宛先</label>
+          <input type="text" id="f_greeting" placeholder="社会インフラデザイン部の皆さま">
+        </div>
+      </div>
+    </div>
+
+    <div class="sheet">
+      <div class="section-title">今週感じたこと・考えたこと<span class="hint">書式はメールにそのまま貼り付けできます</span></div>
+      <div class="rt-toolbar">
+        <button type="button" data-cmd="bold"><b>B</b></button>
+        <button type="button" data-cmd="italic"><i>I</i></button>
+        <div class="sep"></div>
+        <button type="button" data-cmd="h3">■見出し</button>
+        <button type="button" data-cmd="h4">【小見出し】</button>
+        <div class="sep"></div>
+        <button type="button" data-cmd="insertUnorderedList">・箇条書き</button>
+        <button type="button" data-cmd="createLink">🔗リンク</button>
+        <div class="sep"></div>
+        <button type="button" data-cmd="removeFormat">書式解除</button>
+      </div>
+      <div id="bodyEditor" contenteditable="true" data-placeholder="■先週感じたこと/考えたこと　のように書き始められます…"></div>
+    </div>
+
+    <div class="sheet">
+      <div class="section-title">前週の行動履歴<span class="hint">訪問録から転記</span></div>
+      <div class="import-hint"><b>転記のしかた：</b>「訪問録」アプリの週次集計を見ながら、カテゴリごとの今週の回数と行き先メモを入力してください。累計は自動で積み上がります。</div>
+      <table class="datatbl" id="visitTable">
+        <thead><tr><th style="width:22%">区分</th><th style="width:16%">今週</th><th>行き先・目的メモ</th><th style="width:22%">四半期平均参考</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <button type="button" class="add-row-btn" id="addVisitCat">＋ 区分を追加</button>
+      <div class="total-line">今週合計：<b id="visitTotalWeek">0</b>　／　2026.4からの累計：<b id="visitTotalCum">0</b></div>
+    </div>
+
+    <div class="sheet">
+      <div class="section-title">今週の行動予定<span class="hint">あくまで予定</span></div>
+      <div class="day-grid" id="scheduleGrid"></div>
+    </div>
+
+    <div class="sheet">
+      <div class="section-title">前週の飲み<span class="hint">飲みメモから転記</span></div>
+      <div class="import-hint"><b>転記のしかた：</b>「飲みメモ」アプリの週次集計を見ながら、区分ごとの前週実績と今週の予定件数を入力してください。</div>
+      <table class="datatbl" id="drinkTable">
+        <thead><tr><th style="width:20%">区分</th><th style="width:14%">前週実績</th><th style="width:14%">今週予定</th><th>年平均参考</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <button type="button" class="add-row-btn" id="addDrinkCat">＋ 区分を追加</button>
+      <div class="total-line">前週合計：<b id="drinkTotalWeek">0</b>　／　累計：<b id="drinkTotalCum">0</b>　／　今週予定合計：<b id="drinkTotalPlan">0</b></div>
+    </div>
+
+    <div class="sheet">
+      <div class="section-title">プレビュー</div>
+      <div id="previewBox"></div>
+    </div>
+
+    <div class="sticky-actions">
+      <button class="btn ghost" id="backBtn">一覧へ</button>
+      <button class="btn fude" id="copyBtn">📋 メール用にコピー</button>
+      <button class="btn seal" id="saveBtn">保存</button>
+    </div>
+  </div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<!-- settings modal -->
+<div class="modal-bg hidden" id="settingsModal">
+  <div class="modal">
+    <h3>設定</h3>
+    <div class="field" style="margin-bottom:14px;">
+      <label>既定の宛先</label>
+      <input type="text" id="cfg_greeting" placeholder="社会インフラデザイン部の皆さま">
+    </div>
+    <div class="field" style="margin-bottom:6px;">
+      <label>行動履歴の区分</label>
+    </div>
+    <ul id="catModalListVisit"></ul>
+    <button type="button" class="add-row-btn" id="cfgAddVisitCat">＋ 区分を追加</button>
+
+    <div class="field" style="margin:16px 0 6px;">
+      <label>飲みの区分</label>
+    </div>
+    <ul id="catModalListDrink"></ul>
+    <button type="button" class="add-row-btn" id="cfgAddDrinkCat">＋ 区分を追加</button>
+
+    <div class="cfg-note">
+      Firebase を設定すると複数端末で同期できます。script タグ内の <code>firebaseConfig</code> に値を入れてください（未設定の場合はこの端末内にのみ保存されます）。
+    </div>
+    <div class="sticky-actions">
+      <button class="btn ghost" id="settingsCloseBtn">閉じる</button>
+      <button class="btn seal" id="settingsSaveBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- link prompt modal (used for createLink) -->
+<div class="modal-bg hidden" id="linkModal">
+  <div class="modal" style="max-width:420px;">
+    <h3>リンクを挿入</h3>
+    <div class="field"><label>URL</label><input type="text" id="linkUrlInput" placeholder="https://"></div>
+    <div class="sticky-actions">
+      <button class="btn ghost" id="linkCancelBtn">キャンセル</button>
+      <button class="btn seal" id="linkOkBtn">挿入</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   ささやきログ — 単一ファイルWebアプリ
+   Firebase SDK は databaseURL が設定されている場合のみ動的に読み込みます
+   （未設定時は外部通信を一切行わず、端末内保存のみで動作します）
+   ========================================================================= */
+
+/* ---------- Firebase 設定（使う場合はここを埋めてください） ---------- */
+const firebaseConfig = {
+  // apiKey: "...",
+  // authDomain: "...",
+  // databaseURL: "...",
+  // projectId: "...",
+};
+let fbEnabled = false, db = null;
+
+function loadScript(src){
+  return new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = src; s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+async function tryInitFirebase(){
+  if(!firebaseConfig.databaseURL) return;
+  try{
+    await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
+    await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js');
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.database();
+    fbEnabled = true;
+    initFirebaseSync();
+    document.getElementById('syncDot').className = 'on';
+  }catch(e){
+    console.warn('Firebase init skipped', e);
+    fbEnabled = false;
+  }
+}
+
+const DEFAULT_VISIT_CATS = ['初台','事業部','支店','集約組織','協力会社','Ｇ会社','社外','イベント','現場'];
+const DEFAULT_DRINK_CATS = ['部内','本社内','社内','Ｇ内','ＯＢ等','社外'];
+const DEFAULT_GREETING = '社会インフラデザイン部の皆さま';
+const DAYS = [['mon','月'],['tue','火'],['wed','水'],['thu','木'],['fri','金'],['sat','土'],['sun','日']];
+
+let STATE = {
+  issues: [],
+  settings: {
+    greeting: DEFAULT_GREETING,
+    visitCats: DEFAULT_VISIT_CATS.slice(),
+    drinkCats: DEFAULT_DRINK_CATS.slice(),
+  }
+};
+let currentIssueId = null;
+
+/* ---------- storage ---------- */
+function loadLocal(){
+  try{
+    const raw = localStorage.getItem('sasayaki_log_state');
+    if(raw) STATE = Object.assign(STATE, JSON.parse(raw));
+  }catch(e){}
+}
+function saveLocal(){
+  localStorage.setItem('sasayaki_log_state', JSON.stringify(STATE));
+}
+function pushToFirebase(){
+  if(!fbEnabled) return;
+  db.ref('sasayakiLog').set(STATE).then(()=>{
+    document.getElementById('syncDot').className = 'on';
+  }).catch(()=>{ document.getElementById('syncDot').className = 'off'; });
+}
+function initFirebaseSync(){
+  if(!fbEnabled) return;
+  db.ref('sasayakiLog').on('value', snap=>{
+    const val = snap.val();
+    if(val){
+      STATE = val;
+      STATE.issues = STATE.issues || [];
+      STATE.settings = STATE.settings || {greeting:DEFAULT_GREETING, visitCats:DEFAULT_VISIT_CATS.slice(), drinkCats:DEFAULT_DRINK_CATS.slice()};
+      saveLocal();
+      renderList();
+    }
+    document.getElementById('syncDot').className = 'on';
+  }, ()=>{ document.getElementById('syncDot').className = 'off'; });
+}
+function persist(){
+  saveLocal();
+  pushToFirebase();
+}
+
+/* ---------- utils ---------- */
+function uid(){ return 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function escHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._tm);
+  toast._tm = setTimeout(()=>t.classList.remove('show'), 1800);
+}
+function fmtDate(d){
+  if(!d) return '';
+  const dt = new Date(d+'T00:00:00');
+  const w = ['日','月','火','水','木','金','土'][dt.getDay()];
+  return `${dt.getFullYear()}.${dt.getMonth()+1}.${dt.getDate()}(${w})`;
+}
+
+/* cumulative sum for a category up to (and including) given issue's date, within current FY (from 4/1) */
+function fiscalYearStart(dateStr){
+  const d = new Date(dateStr+'T00:00:00');
+  const y = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear()-1; // FY starts April
+  return `${y}-04-01`;
+}
+function cumulativeFor(list, dateStr, cat, field){
+  const fyStart = fiscalYearStart(dateStr || todayStr());
+  let sum = 0;
+  list.forEach(iss=>{
+    if(!iss.date) return;
+    if(iss.date < fyStart || iss.date > (dateStr||'9999-99-99')) return;
+    const row = (field==='visit'? iss.visit : iss.drink||[]).find(r=>r.cat===cat);
+    if(row) sum += Number(row.week)||0;
+  });
+  return sum;
+}
+function todayStr(){
+  const d = new Date();
+  return d.toISOString().slice(0,10);
+}
+
+/* ---------- issue model ---------- */
+function nextVolNumber(){
+  let max = 0;
+  STATE.issues.forEach(i=>{ const n = parseInt(i.vol,10); if(!isNaN(n)) max = Math.max(max,n); });
+  return String(max+1);
+}
+function blankIssue(){
+  return {
+    id: uid(),
+    vol: nextVolNumber(),
+    title: '',
+    greeting: STATE.settings.greeting || DEFAULT_GREETING,
+    date: todayStr(),
+    bodyHtml: '',
+    visit: STATE.settings.visitCats.map(c=>({cat:c, week:'', note:'', qavg:''})),
+    schedule: {mon:'',tue:'',wed:'',thu:'',fri:'',sat:'',sun:''},
+    drink: STATE.settings.drinkCats.map(c=>({cat:c, week:'', plan:'', yavg:''})),
+  };
+}
+
+/* ---------- list view ---------- */
+function renderList(){
+  const wrap = document.getElementById('issueList');
+  const q = (document.getElementById('searchInput').value||'').trim();
+  let list = STATE.issues.slice().sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (Number(b.vol)-Number(a.vol)));
+  if(q){
+    list = list.filter(i=> (i.title+i.vol+ (i.bodyHtml||'').replace(/<[^>]+>/g,'')).includes(q));
+  }
+  wrap.innerHTML = '';
+  document.getElementById('emptyState').classList.toggle('hidden', STATE.issues.length>0);
+  list.forEach(iss=>{
+    const div = document.createElement('div');
+    div.className = 'issue-card';
+    const plain = (iss.bodyHtml||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+    div.innerHTML = `
+      <div class="stamp"><b>${escHtml(iss.vol||'-')}</b><span>Vol.</span></div>
+      <div class="body">
+        <p class="ttl">${escHtml(iss.title || '（無題）')}</p>
+        <div class="meta">${fmtDate(iss.date)}</div>
+        <div class="snippet">${escHtml(plain).slice(0,70)}</div>
+      </div>
+      <div class="actions">
+        <button class="btn ghost sm" data-act="edit" data-id="${iss.id}">編集</button>
+        <button class="btn ghost sm" data-act="dup" data-id="${iss.id}">複製</button>
+        <button class="btn ghost sm" data-act="del" data-id="${iss.id}">削除</button>
+      </div>`;
+    wrap.appendChild(div);
+  });
+}
+document.getElementById('issueList').addEventListener('click', e=>{
+  const btn = e.target.closest('button[data-act]');
+  if(!btn) return;
+  const id = btn.dataset.id;
+  const act = btn.dataset.act;
+  if(act === 'edit') openEditor(id);
+  if(act === 'dup'){
+    const src = STATE.issues.find(i=>i.id===id);
+    if(src){
+      const copy = JSON.parse(JSON.stringify(src));
+      copy.id = uid(); copy.vol = nextVolNumber(); copy.date = todayStr();
+      STATE.issues.push(copy);
+      persist(); renderList(); openEditor(copy.id);
+    }
+  }
+  if(act === 'del'){
+    if(confirm('この号を削除しますか？元に戻せません。')){
+      STATE.issues = STATE.issues.filter(i=>i.id!==id);
+      persist(); renderList();
+    }
+  }
+});
+document.getElementById('searchInput').addEventListener('input', renderList);
+document.getElementById('newIssueBtn').addEventListener('click', ()=>{
+  const iss = blankIssue();
+  STATE.issues.push(iss);
+  persist();
+  openEditor(iss.id);
+});
+
+/* ---------- editor view ---------- */
+function openEditor(id){
+  currentIssueId = id;
+  const iss = STATE.issues.find(i=>i.id===id);
+  if(!iss) return;
+  document.getElementById('listView').classList.add('hidden');
+  document.getElementById('editView').classList.remove('hidden');
+  document.getElementById('f_vol').value = iss.vol||'';
+  document.getElementById('f_date').value = iss.date||'';
+  document.getElementById('f_title').value = iss.title||'';
+  document.getElementById('f_greeting').value = iss.greeting||DEFAULT_GREETING;
+  document.getElementById('bodyEditor').innerHTML = iss.bodyHtml||'';
+  renderVisitTable(iss);
+  renderDrinkTable(iss);
+  renderSchedule(iss);
+  updatePreview();
+  window.scrollTo(0,0);
+}
+function closeEditor(){
+  document.getElementById('editView').classList.add('hidden');
+  document.getElementById('listView').classList.remove('hidden');
+  renderList();
+}
+document.getElementById('backBtn').addEventListener('click', ()=>{ collectForm(); persist(); closeEditor(); });
+
+function currentIssue(){ return STATE.issues.find(i=>i.id===currentIssueId); }
+
+function collectForm(){
+  const iss = currentIssue();
+  if(!iss) return;
+  iss.vol = document.getElementById('f_vol').value.trim();
+  iss.date = document.getElementById('f_date').value;
+  iss.title = document.getElementById('f_title').value.trim();
+  iss.greeting = document.getElementById('f_greeting').value.trim();
+  iss.bodyHtml = document.getElementById('bodyEditor').innerHTML;
+  iss.visit = readTable('visitTable');
+  iss.drink = readTable('drinkTable');
+  iss.schedule = {};
+  DAYS.forEach(([k])=>{ iss.schedule[k] = document.getElementById('day_'+k).value; });
+}
+
+/* ---- visit / drink tables ---- */
+function renderVisitTable(iss){
+  const tbody = document.querySelector('#visitTable tbody');
+  tbody.innerHTML = '';
+  (iss.visit||[]).forEach((row,idx)=>{
+    tbody.appendChild(visitRow(row, idx, iss));
+  });
+  updateVisitTotals(iss);
+}
+function visitRow(row, idx, iss){
+  const tr = document.createElement('tr');
+  const cum = cumulativeFor(STATE.issues.filter(i=>i.id!==iss.id).concat([iss]), iss.date, row.cat, 'visit');
+  tr.innerHTML = `
+    <td class="cat-cell">${escHtml(row.cat)}</td>
+    <td><input type="number" min="0" value="${row.week}" data-f="week" data-idx="${idx}" class="v-week"></td>
+    <td><input type="text" value="${escHtml(row.note)}" data-f="note" data-idx="${idx}" class="v-note" placeholder="行き先・目的"></td>
+    <td><input type="text" value="${escHtml(row.qavg)}" data-f="qavg" data-idx="${idx}" class="v-qavg" placeholder="例 0.2,0.4,0.3,0.1"></td>
+    <td><button type="button" class="rm-row" data-rm="${idx}">✕</button></td>`;
+  return tr;
+}
+function readTable(tableId){
+  const rows = [];
+  document.querySelectorAll('#'+tableId+' tbody tr').forEach(tr=>{
+    const cat = tr.querySelector('.cat-cell').textContent;
+    if(tableId==='visitTable'){
+      rows.push({
+        cat, week: tr.querySelector('.v-week').value, note: tr.querySelector('.v-note').value, qavg: tr.querySelector('.v-qavg').value
+      });
+    }else{
+      rows.push({
+        cat, week: tr.querySelector('.d-week').value, plan: tr.querySelector('.d-plan').value, yavg: tr.querySelector('.d-yavg').value
+      });
+    }
+  });
+  return rows;
+}
+function updateVisitTotals(iss){
+  const rows = readTable('visitTable');
+  const wk = rows.reduce((s,r)=>s+(Number(r.week)||0),0);
+  let cum = 0;
+  rows.forEach(r=>{
+    cum += cumulativeFor(STATE.issues.filter(i=>i.id!==iss.id).concat([{...iss, visit:rows}]), iss.date, r.cat, 'visit');
+  });
+  document.getElementById('visitTotalWeek').textContent = wk;
+  document.getElementById('visitTotalCum').textContent = cum;
+}
+document.querySelector('#visitTable tbody').addEventListener('input', ()=>{ updateVisitTotals(currentIssue()); updatePreview(); });
+document.querySelector('#visitTable tbody').addEventListener('click', e=>{
+  const rm = e.target.closest('[data-rm]');
+  if(rm){ rm.closest('tr').remove(); updateVisitTotals(currentIssue()); updatePreview(); }
+});
+document.getElementById('addVisitCat').addEventListener('click', ()=>{
+  const name = prompt('区分名を入力してください');
+  if(!name) return;
+  const iss = currentIssue();
+  iss.visit = readTable('visitTable');
+  iss.visit.push({cat:name, week:'', note:'', qavg:''});
+  if(!STATE.settings.visitCats.includes(name)) STATE.settings.visitCats.push(name);
+  renderVisitTable(iss);
+  updatePreview();
+});
+
+function renderDrinkTable(iss){
+  const tbody = document.querySelector('#drinkTable tbody');
+  tbody.innerHTML = '';
+  (iss.drink||[]).forEach((row,idx)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="cat-cell">${escHtml(row.cat)}</td>
+      <td><input type="number" min="0" value="${row.week}" data-idx="${idx}" class="d-week"></td>
+      <td><input type="number" min="0" value="${row.plan}" data-idx="${idx}" class="d-plan"></td>
+      <td><input type="text" value="${escHtml(row.yavg)}" data-idx="${idx}" class="d-yavg" placeholder="例 0.4,0.2"></td>
+      <td><button type="button" class="rm-row" data-rm="${idx}">✕</button></td>`;
+    tbody.appendChild(tr);
+  });
+  updateDrinkTotals(iss);
+}
+function updateDrinkTotals(iss){
+  const rows = readTable('drinkTable');
+  const wk = rows.reduce((s,r)=>s+(Number(r.week)||0),0);
+  const plan = rows.reduce((s,r)=>s+(Number(r.plan)||0),0);
+  let cum = 0;
+  rows.forEach(r=>{
+    cum += cumulativeFor(STATE.issues.filter(i=>i.id!==iss.id).concat([{...iss, drink:rows}]), iss.date, r.cat, 'drink');
+  });
+  document.getElementById('drinkTotalWeek').textContent = wk;
+  document.getElementById('drinkTotalCum').textContent = cum;
+  document.getElementById('drinkTotalPlan').textContent = plan;
+}
+document.querySelector('#drinkTable tbody').addEventListener('input', ()=>{ updateDrinkTotals(currentIssue()); updatePreview(); });
+document.querySelector('#drinkTable tbody').addEventListener('click', e=>{
+  const rm = e.target.closest('[data-rm]');
+  if(rm){ rm.closest('tr').remove(); updateDrinkTotals(currentIssue()); updatePreview(); }
+});
+document.getElementById('addDrinkCat').addEventListener('click', ()=>{
+  const name = prompt('区分名を入力してください');
+  if(!name) return;
+  const iss = currentIssue();
+  iss.drink = readTable('drinkTable');
+  iss.drink.push({cat:name, week:'', plan:'', yavg:''});
+  if(!STATE.settings.drinkCats.includes(name)) STATE.settings.drinkCats.push(name);
+  renderDrinkTable(iss);
+  updatePreview();
+});
+
+/* ---- schedule ---- */
+function renderSchedule(iss){
+  const grid = document.getElementById('scheduleGrid');
+  grid.innerHTML = '';
+  DAYS.forEach(([k,label])=>{
+    const l = document.createElement('label'); l.textContent = label+'曜';
+    const inp = document.createElement('input'); inp.type='text'; inp.id='day_'+k;
+    inp.value = (iss.schedule&&iss.schedule[k])||'';
+    inp.placeholder = k==='sat'||k==='sun' ? '（休日）' : '例：初台→虎ノ門';
+    grid.appendChild(l); grid.appendChild(inp);
+  });
+  grid.addEventListener('input', updatePreview);
+}
+
+/* ---------- rich text toolbar ---------- */
+document.querySelectorAll('.rt-toolbar button[data-cmd]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const cmd = btn.dataset.cmd;
+    document.getElementById('bodyEditor').focus();
+    if(cmd === 'h3'){
+      document.execCommand('formatBlock', false, 'H3');
+      document.execCommand('insertText', false, '');
+    }else if(cmd === 'h4'){
+      document.execCommand('formatBlock', false, 'H4');
+    }else if(cmd === 'createLink'){
+      openLinkModal();
+    }else{
+      document.execCommand(cmd, false, null);
+    }
+    updatePreview();
+  });
+});
+document.getElementById('bodyEditor').addEventListener('input', updatePreview);
+
+function openLinkModal(){
+  document.getElementById('linkUrlInput').value = '';
+  document.getElementById('linkModal').classList.remove('hidden');
+  document.getElementById('linkUrlInput').focus();
+}
+document.getElementById('linkCancelBtn').addEventListener('click', ()=> document.getElementById('linkModal').classList.add('hidden'));
+document.getElementById('linkOkBtn').addEventListener('click', ()=>{
+  const url = document.getElementById('linkUrlInput').value.trim();
+  document.getElementById('linkModal').classList.add('hidden');
+  if(url){
+    document.getElementById('bodyEditor').focus();
+    document.execCommand('createLink', false, url);
+    updatePreview();
+  }
+});
+
+/* ---------- preview / email build ---------- */
+function buildVisitTableHtml(rows, dateStr, issId){
+  const iss = currentIssue();
+  let html = '<table><tr><th>区分</th><th>今週</th><th>累計(2026.4~)</th><th>行き先・目的</th><th>四半期平均参考</th></tr>';
+  rows.forEach(r=>{
+    const cum = cumulativeFor(STATE.issues.filter(i=>i.id!==issId).concat([{...iss, visit:rows}]), dateStr, r.cat, 'visit');
+    html += `<tr><td>${escHtml(r.cat)}</td><td>${escHtml(r.week||'0')}</td><td>${cum}</td><td>${escHtml(r.note)}</td><td>${escHtml(r.qavg)}</td></tr>`;
+  });
+  html += '</table>';
+  return html;
+}
+function buildDrinkTableHtml(rows, dateStr, issId){
+  const iss = currentIssue();
+  let html = '<table><tr><th>区分</th><th>前週実績</th><th>累計</th><th>今週予定</th><th>年平均参考</th></tr>';
+  let wk=0, plan=0;
+  rows.forEach(r=>{
+    wk += Number(r.week)||0; plan += Number(r.plan)||0;
+    const cum = cumulativeFor(STATE.issues.filter(i=>i.id!==issId).concat([{...iss, drink:rows}]), dateStr, r.cat, 'drink');
+    html += `<tr><td>${escHtml(r.cat)}</td><td>${escHtml(r.week||'0')}</td><td>${cum}</td><td>${escHtml(r.plan||'0')}</td><td>${escHtml(r.yavg)}</td></tr>`;
+  });
+  html += `<tr><td><b>合計</b></td><td><b>${wk}</b></td><td></td><td><b>${plan}</b></td><td></td></tr>`;
+  html += '</table>';
+  return html;
+}
+function buildScheduleHtml(sched){
+  let html = '<table><tr><th>曜日</th><th>予定</th></tr>';
+  DAYS.forEach(([k,label])=>{
+    if(sched[k]) html += `<tr><td>${label}曜</td><td>${escHtml(sched[k])}</td></tr>`;
+  });
+  html += '</table>';
+  return html;
+}
+function buildFullEmailHtml(){
+  const iss = currentIssue();
+  const bodyHtml = document.getElementById('bodyEditor').innerHTML;
+  const visitRows = readTable('visitTable');
+  const drinkRows = readTable('drinkTable');
+  const sched = {}; DAYS.forEach(([k])=>{ sched[k] = document.getElementById('day_'+k).value; });
+  const title = document.getElementById('f_title').value.trim();
+  const vol = document.getElementById('f_vol').value.trim();
+  const greeting = document.getElementById('f_greeting').value.trim() || DEFAULT_GREETING;
+  const dateStr = document.getElementById('f_date').value;
+
+  let html = `<div style="font-family:sans-serif;">`;
+  html += `<p>ささきのささやきVol.${escHtml(vol)}　～${escHtml(title)}～<br>${escHtml(greeting)}</p>`;
+  html += `<p>お世話になります。<br>佐々木です。</p>`;
+  html += `<div>${bodyHtml}</div>`;
+  html += `<p><b>■前週の行動履歴</b></p>`;
+  html += buildVisitTableHtml(visitRows, dateStr, iss.id);
+  html += `<p><b>■今週の行動予定</b>（あくまで予定）</p>`;
+  html += buildScheduleHtml(sched);
+  html += `<p><b>■前週の飲み</b></p>`;
+  html += buildDrinkTableHtml(drinkRows, dateStr, iss.id);
+  html += `<p>今週もよろしくお願いいたします。</p>`;
+  html += `</div>`;
+  return html;
+}
+function buildFullEmailText(){
+  const div = document.createElement('div');
+  div.innerHTML = buildFullEmailHtml();
+  return div.innerText;
+}
+function updatePreview(){
+  document.getElementById('previewBox').innerHTML = buildFullEmailHtml();
+}
+
+/* ---------- copy for email ---------- */
+document.getElementById('copyBtn').addEventListener('click', async ()=>{
+  collectForm();
+  const html = buildFullEmailHtml();
+  const text = buildFullEmailText();
+  try{
+    if(window.ClipboardItem){
+      const item = new ClipboardItem({
+        'text/html': new Blob([html], {type:'text/html'}),
+        'text/plain': new Blob([text], {type:'text/plain'})
+      });
+      await navigator.clipboard.write([item]);
+    }else{
+      await navigator.clipboard.writeText(text);
+    }
+    toast('メール用にコピーしました。書式を保ったまま貼り付けできます。');
+  }catch(err){
+    console.error(err);
+    // fallback: select the preview node and use execCommand
+    const range = document.createRange();
+    range.selectNodeContents(document.getElementById('previewBox'));
+    const sel = window.getSelection();
+    sel.removeAllRanges(); sel.addRange(range);
+    document.execCommand('copy');
+    sel.removeAllRanges();
+    toast('コピーしました');
+  }
+});
+
+/* ---------- save ---------- */
+document.getElementById('saveBtn').addEventListener('click', ()=>{
+  collectForm();
+  persist();
+  toast('保存しました');
+  renderList();
+});
+
+/* ---------- settings modal ---------- */
+document.getElementById('settingsBtn').addEventListener('click', ()=>{
+  document.getElementById('cfg_greeting').value = STATE.settings.greeting || DEFAULT_GREETING;
+  renderCfgCatList('catModalListVisit', STATE.settings.visitCats);
+  renderCfgCatList('catModalListDrink', STATE.settings.drinkCats);
+  document.getElementById('settingsModal').classList.remove('hidden');
+});
+document.getElementById('settingsCloseBtn').addEventListener('click', ()=> document.getElementById('settingsModal').classList.add('hidden'));
+function renderCfgCatList(ulId, arr){
+  const ul = document.getElementById(ulId);
+  ul.innerHTML = '';
+  arr.forEach((c,idx)=>{
+    const li = document.createElement('li');
+    li.innerHTML = `<input type="text" value="${escHtml(c)}" data-idx="${idx}"><button type="button" class="rm-row" data-rm="${idx}">✕</button>`;
+    ul.appendChild(li);
+  });
+}
+document.getElementById('catModalListVisit').addEventListener('click', e=>{
+  const rm = e.target.closest('[data-rm]'); if(rm) rm.closest('li').remove();
+});
+document.getElementById('catModalListDrink').addEventListener('click', e=>{
+  const rm = e.target.closest('[data-rm]'); if(rm) rm.closest('li').remove();
+});
+document.getElementById('cfgAddVisitCat').addEventListener('click', ()=>{
+  const li = document.createElement('li');
+  li.innerHTML = `<input type="text" value=""><button type="button" class="rm-row" data-rm="-1">✕</button>`;
+  document.getElementById('catModalListVisit').appendChild(li);
+});
+document.getElementById('cfgAddDrinkCat').addEventListener('click', ()=>{
+  const li = document.createElement('li');
+  li.innerHTML = `<input type="text" value=""><button type="button" class="rm-row" data-rm="-1">✕</button>`;
+  document.getElementById('catModalListDrink').appendChild(li);
+});
+document.getElementById('settingsSaveBtn').addEventListener('click', ()=>{
+  STATE.settings.greeting = document.getElementById('cfg_greeting').value.trim() || DEFAULT_GREETING;
+  STATE.settings.visitCats = Array.from(document.querySelectorAll('#catModalListVisit input')).map(i=>i.value.trim()).filter(Boolean);
+  STATE.settings.drinkCats = Array.from(document.querySelectorAll('#catModalListDrink input')).map(i=>i.value.trim()).filter(Boolean);
+  persist();
+  document.getElementById('settingsModal').classList.add('hidden');
+  toast('設定を保存しました');
+});
+
+/* ---------- icon / manifest (embedded, no external files) ---------- */
+function buildIcon(){
+  const c = document.createElement('canvas'); c.width = 192; c.height = 192;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#F7F3EA'; ctx.fillRect(0,0,192,192);
+  ctx.strokeStyle = '#8B3A3A'; ctx.lineWidth = 10;
+  ctx.beginPath(); ctx.arc(96,96,74,0,Math.PI*2); ctx.stroke();
+  ctx.fillStyle = '#8B3A3A';
+  ctx.font = '700 84px "Hiragino Mincho ProN","Yu Mincho",serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('囁', 98, 104);
+  return c.toDataURL('image/png');
+}
+function setupIcon(){
+  const iconUrl = buildIcon();
+  const link1 = document.createElement('link'); link1.rel='icon'; link1.href=iconUrl; document.head.appendChild(link1);
+  const link2 = document.createElement('link'); link2.rel='apple-touch-icon'; link2.href=iconUrl; document.head.appendChild(link2);
+  const manifest = {
+    name:'ささやきログ', short_name:'ささやき', start_url:'.', display:'standalone',
+    background_color:'#F7F3EA', theme_color:'#8B3A3A',
+    icons:[{src:iconUrl, sizes:'192x192', type:'image/png'}]
+  };
+  const blob = new Blob([JSON.stringify(manifest)], {type:'application/json'});
+  const link3 = document.createElement('link'); link3.rel='manifest'; link3.href=URL.createObjectURL(blob);
+  document.head.appendChild(link3);
+  const meta = document.createElement('meta'); meta.name='apple-mobile-web-app-capable'; meta.content='yes';
+  document.head.appendChild(meta);
+}
+
+/* ---------- init ---------- */
+function init(){
+  loadLocal();
+  setupIcon();
+  tryInitFirebase();
+  renderList();
+  document.getElementById('syncDot').className = fbEnabled ? 'off' : 'off';
+}
+init();
+</script>
+</body>
+</html>
