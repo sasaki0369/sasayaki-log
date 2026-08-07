@@ -223,6 +223,19 @@
   #catModalList{list-style:none;padding:0;margin:0 0 10px;}
   #catModalList li{display:flex;gap:8px;align-items:center;margin-bottom:6px;}
   #catModalList input{flex:1;}
+
+  .import-item{
+    display:flex;gap:10px;align-items:flex-start;background:#fff;border:1px solid var(--line);
+    border-radius:var(--radius);padding:10px 12px;margin-bottom:8px;
+  }
+  .import-item input[type=checkbox]{margin-top:4px;flex-shrink:0;}
+  .import-item .ii-body{flex:1;min-width:0;}
+  .import-item .ii-ttl{font-weight:700;font-size:13.5px;margin:0 0 2px;}
+  .import-item .ii-meta{font-size:11px;color:var(--ink-soft);display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .import-item .ii-meta input[type=date]{border:1px solid var(--line);border-radius:3px;padding:2px 4px;font-size:11px;}
+  .import-item .ii-warn{color:var(--seal);font-size:11px;}
+  .import-item .ii-snippet{font-size:11.5px;color:var(--ink-soft);margin-top:4px;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
 </style>
 </head>
 <body>
@@ -247,6 +260,7 @@
   <div id="listView">
     <div class="toolbar">
       <input class="search" id="searchInput" type="text" placeholder="号数・タイトル・本文で検索">
+      <button class="btn ghost" id="importBtn">📥 読込</button>
       <button class="btn seal" id="newIssueBtn">＋ 新規号</button>
     </div>
     <div id="issueList"></div>
@@ -372,6 +386,28 @@
   </div>
 </div>
 
+<!-- import modal -->
+<div class="modal-bg hidden" id="importModal">
+  <div class="modal">
+    <h3>過去ログを読み込む</h3>
+    <div class="import-hint">
+      過去に送った「ささきのささやき」のメール本文を、<b>複数まとめてそのまま貼り付け</b>できます。<br>
+      各号の末尾にある「<b>今週もよろしくお願いいたします。</b>」を区切りとして自動的にレコードに分割し、本文中の<b>日付</b>らしき記述（送信日時・YYYY年M月D日など）を各レコードの日付として拾います。
+    </div>
+    <textarea id="importText" rows="8" style="width:100%;border:1px solid var(--line);border-radius:3px;padding:10px;font-size:13px;font-family:inherit;background:var(--paper);"
+      placeholder="ここに過去のメール本文をまとめて貼り付けてください"></textarea>
+    <div style="display:flex;gap:8px;margin:10px 0 4px;">
+      <button type="button" class="btn fude" id="importParseBtn">解析する</button>
+      <span id="importParseSummary" style="align-self:center;font-size:12.5px;color:var(--ink-soft);"></span>
+    </div>
+    <div id="importPreviewList"></div>
+    <div class="sticky-actions">
+      <button class="btn ghost" id="importCancelBtn">キャンセル</button>
+      <button class="btn seal" id="importCommitBtn" disabled>選択した号をインポート</button>
+    </div>
+  </div>
+</div>
+
 <!-- link prompt modal (used for createLink) -->
 <div class="modal-bg hidden" id="linkModal">
   <div class="modal" style="max-width:420px;">
@@ -391,12 +427,15 @@
    （未設定時は外部通信を一切行わず、端末内保存のみで動作します）
    ========================================================================= */
 
-/* ---------- Firebase 設定（使う場合はここを埋めてください） ---------- */
+/* ---------- Firebase 設定 ---------- */
 const firebaseConfig = {
-  // apiKey: "...",
-  // authDomain: "...",
-  // databaseURL: "...",
-  // projectId: "...",
+  apiKey: "AIzaSyDIy6nl-8qBu2SQC5C3ATwAX4VJd7ZjrMM",
+  authDomain: "sasayaki-log.firebaseapp.com",
+  databaseURL: "https://sasayaki-log-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "sasayaki-log",
+  storageBucket: "sasayaki-log.firebasestorage.app",
+  messagingSenderId: "153409365240",
+  appId: "1:153409365240:web:08e89af5bdeb72c9f8070d"
 };
 let fbEnabled = false, db = null;
 
@@ -930,6 +969,187 @@ document.getElementById('settingsSaveBtn').addEventListener('click', ()=>{
   persist();
   document.getElementById('settingsModal').classList.add('hidden');
   toast('設定を保存しました');
+});
+
+/* ---------- bulk import from past emails ---------- */
+const CLOSING_PHRASE = '今週もよろしくお願いいたします。';
+const DAY_MAP = {'月':'mon','火':'tue','水':'wed','木':'thu','金':'fri','土':'sat','日':'sun'};
+
+function textToBodyHtml(text){
+  const lines = text.split('\n');
+  let html = '';
+  let paraBuf = [];
+  function flushPara(){
+    if(paraBuf.length){
+      html += '<p>' + paraBuf.map(l=>escHtml(l)).join('<br>') + '</p>';
+      paraBuf = [];
+    }
+  }
+  lines.forEach(line=>{
+    const t = line.trim();
+    if(t === ''){ flushPara(); return; }
+    const h3m = t.match(/^■\s*(.+)$/);
+    const h4m = t.match(/^【(.+)】$/);
+    if(h3m){ flushPara(); html += `<h3>${escHtml(h3m[1])}</h3>`; return; }
+    if(h4m){ flushPara(); html += `<h4>【${escHtml(h4m[1])}】</h4>`; return; }
+    paraBuf.push(t);
+  });
+  flushPara();
+  return html;
+}
+
+function parseVisitRow(line){
+  const m = line.match(/^([^\s：:][^：:]*?)[：:]\s*(\d+)\s*\[(\d+)\]\s*【([^】]*)】\s*(?:[\[（](.*?)[\]）])?\s*$/);
+  if(!m) return null;
+  return { cat: m[1].trim(), week: m[2], note: (m[5]||'').trim(), qavg: (m[4]||'').trim() };
+}
+function parseDrinkRow(line){
+  if(/^合計/.test(line.trim())) return null;
+  const m = line.match(/^([^\s：:][^：:]*?)[：:]\s*(\d+)\s*\[(\d+)\]\s*\((\d+)\)\s*【([^】]*)】\s*$/);
+  if(!m) return null;
+  return { cat: m[1].trim(), week: m[2], plan: m[4], yavg: (m[5]||'').trim() };
+}
+
+function parseBulkText(raw){
+  const rawChunks = raw.replace(/\r\n/g,'\n').split(CLOSING_PHRASE);
+  const records = [];
+  rawChunks.forEach(chunk=>{
+    if(!/ささきのささやき/.test(chunk)) return;
+    const lines = chunk.split('\n');
+    const volIdx = lines.findIndex(l=>/ささきのささやき/.test(l));
+    if(volIdx === -1) return;
+    const volLine = lines[volIdx];
+    const volMatch = volLine.match(/Vol\.?\s*(\d+)/);
+    const titleMatch = volLine.match(/[~〜～]\s*(.*?)\s*[~〜～]/);
+    const vol = volMatch ? volMatch[1] : '';
+    const title = titleMatch ? titleMatch[1].trim() : '';
+
+    let gIdx = volIdx+1;
+    while(gIdx<lines.length && lines[gIdx].trim()==='') gIdx++;
+    const greeting = lines[gIdx] ? lines[gIdx].trim() : '';
+
+    let date = '';
+    const dm = chunk.match(/(\d{4})[年.\/\-](\d{1,2})[月.\/\-](\d{1,2})日?/);
+    const dm8 = chunk.match(/\b(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\b/);
+    if(dm){
+      const y=dm[1], m=String(Number(dm[2])).padStart(2,'0'), d=String(Number(dm[3])).padStart(2,'0');
+      date = `${y}-${m}-${d}`;
+    }else if(dm8){
+      date = `${dm8[1]}-${dm8[2]}-${dm8[3]}`;
+    }
+
+    const idxVisitHeader = lines.findIndex(l=>/■\s*(前週|先週)?の?行動履歴/.test(l));
+    const idxScheduleHeader = lines.findIndex(l=>/■\s*今週の行動予定/.test(l));
+    const idxDrinkHeader = lines.findIndex(l=>/■\s*(前週|先週)の飲み/.test(l));
+
+    let bodyStartIdx = lines.findIndex(l=>/佐々木です。/.test(l));
+    bodyStartIdx = bodyStartIdx===-1 ? gIdx+1 : bodyStartIdx+1;
+    while(bodyStartIdx<lines.length && (lines[bodyStartIdx].trim()==='' || /^今週の(ささやき|ブログ)です。?$/.test(lines[bodyStartIdx].trim()))) bodyStartIdx++;
+    const bodyEndIdx = idxVisitHeader!==-1 ? idxVisitHeader : (idxScheduleHeader!==-1 ? idxScheduleHeader : (idxDrinkHeader!==-1 ? idxDrinkHeader : lines.length));
+    const bodyHtml = textToBodyHtml(lines.slice(bodyStartIdx, bodyEndIdx).join('\n').trim());
+
+    const visit = [];
+    if(idxVisitHeader!==-1){
+      const endIdx = idxScheduleHeader!==-1 ? idxScheduleHeader : (idxDrinkHeader!==-1 ? idxDrinkHeader : lines.length);
+      for(let i=idxVisitHeader+1;i<endIdx;i++){
+        const row = parseVisitRow(lines[i]);
+        if(row) visit.push(row);
+      }
+    }
+
+    const schedule = {mon:'',tue:'',wed:'',thu:'',fri:'',sat:'',sun:''};
+    if(idxScheduleHeader!==-1){
+      const endIdx = idxDrinkHeader!==-1 ? idxDrinkHeader : lines.length;
+      for(let i=idxScheduleHeader+1;i<endIdx;i++){
+        const m = lines[i].match(/^\s*(月|火|水|木|金|土|日)曜\s*[：:]\s*(.*)$/);
+        if(m) schedule[DAY_MAP[m[1]]] = m[2].trim();
+      }
+    }
+
+    const drink = [];
+    if(idxDrinkHeader!==-1){
+      for(let i=idxDrinkHeader+1;i<lines.length;i++){
+        const row = parseDrinkRow(lines[i]);
+        if(row) drink.push(row);
+      }
+    }
+
+    records.push({
+      id: uid(), vol, title, greeting: greeting || STATE.settings.greeting, date,
+      bodyHtml,
+      visit: visit.length ? visit : STATE.settings.visitCats.map(c=>({cat:c, week:'', note:'', qavg:''})),
+      schedule,
+      drink: drink.length ? drink : STATE.settings.drinkCats.map(c=>({cat:c, week:'', plan:'', yavg:''})),
+    });
+  });
+  return records;
+}
+
+let importCandidates = [];
+document.getElementById('importBtn').addEventListener('click', ()=>{
+  document.getElementById('importText').value = '';
+  document.getElementById('importPreviewList').innerHTML = '';
+  document.getElementById('importParseSummary').textContent = '';
+  document.getElementById('importCommitBtn').disabled = true;
+  importCandidates = [];
+  document.getElementById('importModal').classList.remove('hidden');
+});
+document.getElementById('importCancelBtn').addEventListener('click', ()=>{
+  document.getElementById('importModal').classList.add('hidden');
+});
+document.getElementById('importParseBtn').addEventListener('click', ()=>{
+  const raw = document.getElementById('importText').value;
+  importCandidates = parseBulkText(raw);
+  const list = document.getElementById('importPreviewList');
+  list.innerHTML = '';
+  const existingVols = new Set(STATE.issues.map(i=>i.vol));
+  if(importCandidates.length === 0){
+    document.getElementById('importParseSummary').textContent = '号を検出できませんでした。「ささきのささやきVol.〜」の行が含まれているかご確認ください。';
+    document.getElementById('importCommitBtn').disabled = true;
+    return;
+  }
+  document.getElementById('importParseSummary').textContent = `${importCandidates.length}件の号を検出しました。内容を確認してインポートしてください。`;
+  importCandidates.forEach((rec, idx)=>{
+    const dup = rec.vol && existingVols.has(rec.vol);
+    const plain = (rec.bodyHtml||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+    const div = document.createElement('div');
+    div.className = 'import-item';
+    div.innerHTML = `
+      <input type="checkbox" data-idx="${idx}" ${dup?'':'checked'}>
+      <div class="ii-body">
+        <p class="ii-ttl">Vol.${escHtml(rec.vol||'?')}　${escHtml(rec.title||'（無題）')}</p>
+        <div class="ii-meta">
+          日付：<input type="date" data-idx="${idx}" class="ii-date" value="${rec.date||''}">
+          ${dup?'<span class="ii-warn">既存のVol.'+escHtml(rec.vol)+'と重複の可能性があります</span>':''}
+        </div>
+        <div class="ii-snippet">${escHtml(plain).slice(0,80)}</div>
+      </div>`;
+    list.appendChild(div);
+  });
+  document.getElementById('importCommitBtn').disabled = false;
+});
+document.getElementById('importPreviewList').addEventListener('change', e=>{
+  const dateInput = e.target.closest('.ii-date');
+  if(dateInput){
+    importCandidates[Number(dateInput.dataset.idx)].date = dateInput.value;
+  }
+});
+document.getElementById('importCommitBtn').addEventListener('click', ()=>{
+  const checks = document.querySelectorAll('#importPreviewList input[type=checkbox]');
+  let count = 0;
+  checks.forEach(cb=>{
+    if(cb.checked){
+      const rec = importCandidates[Number(cb.dataset.idx)];
+      STATE.issues.push(rec);
+      count++;
+    }
+  });
+  if(count>0){
+    persist();
+    renderList();
+    toast(`${count}件の号をインポートしました`);
+  }
+  document.getElementById('importModal').classList.add('hidden');
 });
 
 /* ---------- icon / manifest (embedded, no external files) ---------- */
