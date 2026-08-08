@@ -490,6 +490,7 @@
     <div id="previewModalBox" style="background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--radius);padding:16px;font-size:13px;line-height:1.8;max-height:60vh;overflow-y:auto;"></div>
     <div class="sticky-actions">
       <button class="btn ghost" id="previewCloseBtn">閉じる</button>
+      <button class="btn fude" id="previewCopyBtn">📋 メール用にコピー</button>
       <button class="btn seal" id="previewEditBtn">編集する</button>
     </div>
   </div>
@@ -661,6 +662,10 @@ function todayStr(){
 }
 
 /* ---------- issue model ---------- */
+const DEFAULT_BODY_TEXT = 'お世話になります。\n佐々木です。\n\n今週のささやきです。\n\n■先週感じたこと/考えたこと';
+function plainTextToParagraphsHtml(text){
+  return text.split('\n\n').map(para => '<p>' + para.split('\n').map(escHtml).join('<br>') + '</p>').join('');
+}
 function nextVolNumber(){
   let max = 0;
   STATE.issues.forEach(i=>{ const n = parseInt(i.vol,10); if(!isNaN(n)) max = Math.max(max,n); });
@@ -673,7 +678,7 @@ function blankIssue(){
     title: '',
     greeting: STATE.settings.greeting || DEFAULT_GREETING,
     date: todayStr(),
-    bodyHtml: '',
+    bodyHtml: plainTextToParagraphsHtml(DEFAULT_BODY_TEXT),
     visit: STATE.settings.visitCats.map(c=>({cat:c, week:'', note:'', qavg:''})),
     schedule: {mon:'',tue:'',wed:'',thu:'',fri:'',sat:'',sun:''},
     drink: STATE.settings.drinkCats.map(c=>({cat:c, week:'', plan:'', yavg:''})),
@@ -1179,7 +1184,6 @@ function buildFullEmailHtml(){
 
   let html = `<div style="font-family:sans-serif;">`;
   html += `<p>ささきのささやきVol.${escHtml(vol)}　～${escHtml(title)}～<br>${escHtml(greeting)}</p>`;
-  html += `<p>お世話になります。<br>佐々木です。</p>`;
   html += `<div>${bodyHtml}</div>`;
   html += `<div style="${monoStyle}">`;
   html += textBlockToHtml(buildVisitBlockText(visitRows, dateStr, iss.id, iss)) + '<br><br>';
@@ -1209,7 +1213,6 @@ function buildFullEmailHtmlForIssue(iss){
 
   let html = `<div style="font-family:sans-serif;">`;
   html += `<p>ささきのささやきVol.${escHtml(vol)}　～${escHtml(title)}～<br>${escHtml(greeting)}</p>`;
-  html += `<p>お世話になります。<br>佐々木です。</p>`;
   html += `<div>${bodyHtml}</div>`;
   html += `<div style="${monoStyle}">`;
   html += textBlockToHtml(buildVisitBlockText(visitRows, dateStr, iss.id, iss)) + '<br><br>';
@@ -1225,10 +1228,7 @@ function updatePreview(){
 }
 
 /* ---------- copy for email ---------- */
-document.getElementById('copyBtn').addEventListener('click', async ()=>{
-  collectForm();
-  const html = buildFullEmailHtml();
-  const text = buildFullEmailText();
+async function copyHtmlToClipboard(html, text, fallbackNode){
   try{
     if(window.ClipboardItem){
       const item = new ClipboardItem({
@@ -1242,15 +1242,30 @@ document.getElementById('copyBtn').addEventListener('click', async ()=>{
     toast('メール用にコピーしました。書式を保ったまま貼り付けできます。');
   }catch(err){
     console.error(err);
-    // fallback: select the preview node and use execCommand
+    // fallback: select the given node and use execCommand
     const range = document.createRange();
-    range.selectNodeContents(document.getElementById('previewBox'));
+    range.selectNodeContents(fallbackNode);
     const sel = window.getSelection();
     sel.removeAllRanges(); sel.addRange(range);
     document.execCommand('copy');
     sel.removeAllRanges();
     toast('コピーしました');
   }
+}
+document.getElementById('copyBtn').addEventListener('click', async ()=>{
+  collectForm();
+  const html = buildFullEmailHtml();
+  const text = buildFullEmailText();
+  await copyHtmlToClipboard(html, text, document.getElementById('previewBox'));
+});
+document.getElementById('previewCopyBtn').addEventListener('click', async ()=>{
+  const iss = STATE.issues.find(i=>i.id===previewIssueId);
+  if(!iss) return;
+  const html = buildFullEmailHtmlForIssue(iss);
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  const text = div.innerText;
+  await copyHtmlToClipboard(html, text, document.getElementById('previewModalBox'));
 });
 
 /* ---------- save ---------- */
