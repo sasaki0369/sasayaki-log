@@ -223,6 +223,21 @@
 
   .cfg-note{font-size:11.5px;color:var(--ink-soft);line-height:1.7;margin-top:10px;}
   .hidden{display:none !important;}
+
+  .idea-card{
+    background:#fff;border:1px solid var(--line);border-radius:var(--radius);
+    padding:14px 16px;margin-bottom:10px;box-shadow:var(--shadow);
+  }
+  .idea-card.used{opacity:0.6;}
+  .idea-card-head{display:flex;align-items:flex-start;gap:8px;justify-content:space-between;}
+  .idea-ttl{font-weight:700;font-size:15px;margin:0;flex:1;min-width:0;word-break:break-word;}
+  .idea-used-badge{
+    flex-shrink:0;font-size:10.5px;background:var(--paper-deep);color:var(--ink-soft);
+    border:1px solid var(--line);border-radius:10px;padding:2px 8px;white-space:nowrap;
+  }
+  .idea-content{font-size:13px;color:var(--ink);line-height:1.7;margin-top:6px;white-space:pre-wrap;word-break:break-word;}
+  .idea-meta{font-size:11px;color:var(--ink-soft);margin-top:8px;}
+  .idea-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
   #catModalList{list-style:none;padding:0;margin:0 0 10px;}
   #catModalList li{display:flex;gap:8px;align-items:center;margin-bottom:6px;}
   #catModalList input{flex:1;}
@@ -253,6 +268,7 @@
   </div>
   <div id="syncDot" class="off" title="同期状態"></div>
   <div class="head-actions">
+    <button class="icon-btn" id="ideaNavBtn" title="ネタ帳">💡</button>
     <button class="icon-btn" id="settingsBtn" title="設定">⚙</button>
   </div>
 </header>
@@ -358,7 +374,51 @@
     </div>
   </div>
 
+  <!-- ============ IDEA NOTEBOOK VIEW ============ -->
+  <div id="ideaView" class="hidden">
+    <div class="toolbar">
+      <button class="btn ghost" id="ideaBackBtn">← 号一覧へ</button>
+    </div>
+
+    <div class="sheet">
+      <div class="section-title">新規メモ<span class="hint">思いついたらすぐ</span></div>
+      <div class="field" style="margin-bottom:8px;">
+        <input type="text" id="ideaTitleInput" placeholder="タイトル（例：写真甲子園の話）" style="width:100%;border:1px solid var(--line);border-radius:3px;padding:9px 10px;font-size:14px;background:var(--paper);color:var(--ink);">
+      </div>
+      <div class="field" style="margin-bottom:8px;">
+        <textarea id="ideaContentInput" rows="3" placeholder="内容・メモ" style="width:100%;border:1px solid var(--line);border-radius:3px;padding:9px 10px;font-size:14px;background:var(--paper);color:var(--ink);font-family:inherit;"></textarea>
+      </div>
+      <div id="ideaLocStatus" style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;min-height:14px;"></div>
+      <button type="button" class="btn seal" id="ideaSaveBtn" style="width:100%;">💡 メモを保存</button>
+    </div>
+
+    <div id="ideaList"></div>
+    <div id="ideaEmptyState" class="empty hidden">
+      <div class="stamp">💡</div>
+      <p>まだネタがありません。<br>思いついたらすぐメモしましょう。</p>
+    </div>
+  </div>
+
 </main>
+
+<!-- idea edit modal -->
+<div class="modal-bg hidden" id="ideaEditModal">
+  <div class="modal" style="max-width:520px;">
+    <h3>ネタを編集</h3>
+    <div class="field" style="margin-bottom:10px;">
+      <label>タイトル</label>
+      <input type="text" id="ideaEditTitle" style="width:100%;border:1px solid var(--line);border-radius:3px;padding:9px 10px;font-size:14px;background:var(--paper);color:var(--ink);">
+    </div>
+    <div class="field" style="margin-bottom:6px;">
+      <label>内容</label>
+      <textarea id="ideaEditContent" rows="5" style="width:100%;border:1px solid var(--line);border-radius:3px;padding:9px 10px;font-size:14px;background:var(--paper);color:var(--ink);font-family:inherit;"></textarea>
+    </div>
+    <div class="sticky-actions">
+      <button class="btn ghost" id="ideaEditCancelBtn">キャンセル</button>
+      <button class="btn seal" id="ideaEditSaveBtn">保存</button>
+    </div>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -510,6 +570,7 @@ const DAYS = [['mon','月'],['tue','火'],['wed','水'],['thu','木'],['fri','�
 
 let STATE = {
   issues: [],
+  ideas: [],
   settings: {
     greeting: DEFAULT_GREETING,
     visitCats: DEFAULT_VISIT_CATS.slice(),
@@ -525,6 +586,7 @@ function loadLocal(){
   try{
     const raw = localStorage.getItem('sasayaki_log_state');
     if(raw) STATE = Object.assign(STATE, JSON.parse(raw));
+    STATE.ideas = STATE.ideas || [];
   }catch(e){}
 }
 function saveLocal(){
@@ -543,11 +605,13 @@ function initFirebaseSync(){
     if(val){
       STATE = val;
       STATE.issues = STATE.issues || [];
+      STATE.ideas = STATE.ideas || [];
       STATE.settings = STATE.settings || {greeting:DEFAULT_GREETING, visitCats:DEFAULT_VISIT_CATS.slice(), drinkCats:DEFAULT_DRINK_CATS.slice()};
       if(STATE.settings.visitNote === undefined) STATE.settings.visitNote = DEFAULT_VISIT_NOTE;
       if(STATE.settings.drinkNote === undefined) STATE.settings.drinkNote = DEFAULT_DRINK_NOTE;
       saveLocal();
       renderList();
+      if(!document.getElementById('ideaView').classList.contains('hidden')) renderIdeaList();
     }
     document.getElementById('syncDot').className = 'on';
   }, ()=>{ document.getElementById('syncDot').className = 'off'; });
@@ -1451,6 +1515,164 @@ document.getElementById('importCommitBtn').addEventListener('click', ()=>{
   if(skippedExisting>0) msg += `（既存と重複する${skippedExisting}件はスキップ）`;
   toast(msg);
   document.getElementById('importModal').classList.add('hidden');
+});
+
+/* ---------- ネタ帳 ---------- */
+function uidIdea(){ return 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function fmtDateTime(ts){
+  if(!ts) return '';
+  const d = new Date(ts);
+  const w = ['日','月','火','水','木','金','土'][d.getDay()];
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}(${w}) ${hh}:${mm}`;
+}
+function getCurrentLocation(){
+  return new Promise((resolve)=>{
+    if(!navigator.geolocation){ resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({lat: pos.coords.latitude, lng: pos.coords.longitude}),
+      err => { console.warn('geolocation failed', err); resolve(null); },
+      {timeout: 8000, maximumAge: 60000}
+    );
+  });
+}
+async function reverseGeocodeMuni(lat, lng){
+  try{
+    const res = await fetch(`https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress?lat=${lat}&lon=${lng}`);
+    const data = await res.json();
+    const r = data && data.results;
+    if(r && r.lv01Nm) return r.lv01Nm.trim();
+    return null;
+  }catch(e){
+    console.warn('reverse geocode failed', e);
+    return null;
+  }
+}
+
+function switchToIdeaView(){
+  document.getElementById('listView').classList.add('hidden');
+  document.getElementById('editView').classList.add('hidden');
+  document.getElementById('ideaView').classList.remove('hidden');
+  renderIdeaList();
+  window.scrollTo(0,0);
+}
+function switchToListViewFromIdea(){
+  document.getElementById('ideaView').classList.add('hidden');
+  document.getElementById('listView').classList.remove('hidden');
+  renderList();
+}
+document.getElementById('ideaNavBtn').addEventListener('click', switchToIdeaView);
+document.getElementById('ideaBackBtn').addEventListener('click', switchToListViewFromIdea);
+
+function renderIdeaList(){
+  const wrap = document.getElementById('ideaList');
+  wrap.innerHTML = '';
+  const list = STATE.ideas.slice().sort((a,b)=>{
+    const au = a.used ? 1 : 0, bu = b.used ? 1 : 0;
+    if(au !== bu) return au - bu; // 未使用が先
+    return (b.createdAt||0) - (a.createdAt||0); // 新しい順
+  });
+  document.getElementById('ideaEmptyState').classList.toggle('hidden', STATE.ideas.length>0);
+  list.forEach(idea=>{
+    const div = document.createElement('div');
+    div.className = 'idea-card' + (idea.used ? ' used' : '');
+    div.dataset.id = idea.id;
+    let locText;
+    if(idea.locationName) locText = idea.locationName;
+    else if(idea.locationFailed) locText = '位置情報なし';
+    else locText = '';
+    div.innerHTML = `
+      <div class="idea-card-head">
+        <p class="idea-ttl">${escHtml(idea.title || '（無題）')}</p>
+        ${idea.used ? '<span class="idea-used-badge">使用済み</span>' : ''}
+      </div>
+      ${idea.content ? `<div class="idea-content">${escHtml(idea.content)}</div>` : ''}
+      <div class="idea-meta">${fmtDateTime(idea.createdAt)}${locText ? '　・　'+escHtml(locText) : ''}</div>
+      <div class="idea-actions">
+        <button type="button" class="btn ghost sm" data-act="edit" data-id="${idea.id}">編集</button>
+        <button type="button" class="btn ghost sm" data-act="toggleUsed" data-id="${idea.id}">${idea.used ? '未使用に戻す' : '使用済みにする'}</button>
+        <button type="button" class="btn ghost sm" data-act="del" data-id="${idea.id}">削除</button>
+      </div>`;
+    wrap.appendChild(div);
+  });
+}
+
+document.getElementById('ideaSaveBtn').addEventListener('click', async ()=>{
+  const title = document.getElementById('ideaTitleInput').value.trim();
+  const content = document.getElementById('ideaContentInput').value.trim();
+  if(!title && !content){ toast('タイトルか内容を入力してください'); return; }
+  const btn = document.getElementById('ideaSaveBtn');
+  const statusEl = document.getElementById('ideaLocStatus');
+  const origLabel = btn.textContent;
+  btn.disabled = true; btn.textContent = '保存中…';
+  statusEl.textContent = '位置情報を取得中…';
+
+  const idea = { id: uidIdea(), title, content, createdAt: Date.now(), used: false, locationName: null, locationFailed: false };
+  const pos = await getCurrentLocation();
+  if(pos){
+    idea.lat = pos.lat; idea.lng = pos.lng;
+    const muni = await reverseGeocodeMuni(pos.lat, pos.lng);
+    idea.locationName = muni;
+    idea.locationFailed = !muni;
+  }else{
+    idea.locationFailed = true;
+  }
+
+  STATE.ideas.push(idea);
+  persist();
+  document.getElementById('ideaTitleInput').value = '';
+  document.getElementById('ideaContentInput').value = '';
+  statusEl.textContent = '';
+  btn.disabled = false; btn.textContent = origLabel;
+  renderIdeaList();
+  toast('メモを保存しました');
+});
+
+document.getElementById('ideaList').addEventListener('click', e=>{
+  const btn = e.target.closest('button[data-act]');
+  if(!btn) return;
+  const id = btn.dataset.id;
+  const act = btn.dataset.act;
+  const idea = STATE.ideas.find(i=>i.id===id);
+  if(!idea) return;
+  if(act === 'del'){
+    if(confirm('このネタを削除しますか？元に戻せません。')){
+      STATE.ideas = STATE.ideas.filter(i=>i.id!==id);
+      persist(); renderIdeaList();
+    }
+  }
+  if(act === 'toggleUsed'){
+    idea.used = !idea.used;
+    idea.usedAt = idea.used ? Date.now() : null;
+    persist(); renderIdeaList();
+  }
+  if(act === 'edit'){
+    openIdeaEdit(id);
+  }
+});
+
+let ideaEditId = null;
+function openIdeaEdit(id){
+  const idea = STATE.ideas.find(i=>i.id===id);
+  if(!idea) return;
+  ideaEditId = id;
+  document.getElementById('ideaEditTitle').value = idea.title || '';
+  document.getElementById('ideaEditContent').value = idea.content || '';
+  document.getElementById('ideaEditModal').classList.remove('hidden');
+}
+document.getElementById('ideaEditCancelBtn').addEventListener('click', ()=>{
+  document.getElementById('ideaEditModal').classList.add('hidden');
+});
+document.getElementById('ideaEditSaveBtn').addEventListener('click', ()=>{
+  const idea = STATE.ideas.find(i=>i.id===ideaEditId);
+  if(idea){
+    idea.title = document.getElementById('ideaEditTitle').value.trim();
+    idea.content = document.getElementById('ideaEditContent').value.trim();
+    persist();
+    renderIdeaList();
+  }
+  document.getElementById('ideaEditModal').classList.add('hidden');
 });
 
 /* ---------- icon / manifest (embedded, no external files) ---------- */
