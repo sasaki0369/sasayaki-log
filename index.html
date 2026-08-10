@@ -1552,12 +1552,18 @@ function getCurrentLocation(){
     );
   });
 }
+function extractMunicipality(name){
+  if(!name) return null;
+  // lv01Nm は大字・町丁目まで含む詳細地名のため、市区町村までで切り出す
+  const m = name.match(/^(.*?[市区町村])/);
+  return m ? m[1] : name;
+}
 async function reverseGeocodeMuni(lat, lng){
   try{
     const res = await fetch(`https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress?lat=${lat}&lon=${lng}`);
     const data = await res.json();
     const r = data && data.results;
-    if(r && r.lv01Nm) return r.lv01Nm.trim();
+    if(r && r.lv01Nm) return extractMunicipality(r.lv01Nm.trim());
     return null;
   }catch(e){
     console.warn('reverse geocode failed', e);
