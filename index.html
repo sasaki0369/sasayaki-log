@@ -586,13 +586,11 @@ async function tryInitFirebase(){
 document.getElementById('googleLoginBtn').addEventListener('click', ()=>{
   const provider = new firebase.auth.GoogleAuthProvider();
   document.getElementById('loginError').textContent = '';
-  firebase.auth().signInWithPopup(provider).catch((err)=>{
-    if(err && (err.code === 'auth/popup-blocked' || err.code === 'auth/cancelled-popup-request' || err.code === 'auth/operation-not-supported-in-this-environment')){
-      firebase.auth().signInWithRedirect(provider);
-    }else{
-      console.warn('Google sign-in failed', err);
-      document.getElementById('loginError').textContent = 'ログインに失敗しました（'+(err && err.code ? err.code : err)+'）';
-    }
+  document.getElementById('googleLoginBtn').textContent = 'ログイン画面へ移動しています…';
+  firebase.auth().signInWithRedirect(provider).catch((err)=>{
+    console.warn('Google sign-in failed', err);
+    document.getElementById('loginError').textContent = 'ログインに失敗しました（'+(err && err.code ? err.code : err)+'）';
+    document.getElementById('googleLoginBtn').textContent = 'Googleでログイン';
   });
 });
 
