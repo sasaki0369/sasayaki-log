@@ -1134,7 +1134,10 @@ document.getElementById('autoFillBtn').addEventListener('click', async ()=>{
     STATE.settings.drinkNote = `（[]内は${Number(dy)}.${Number(dm)}からの累計、()内は今週の予定,【】内は${drinkStats.year1||''}平均,${drinkStats.year2||''}平均）`;
 
     updatePreview();
-    document.getElementById('autoFillStatus').textContent = `反映済み（前週 ${ranges.lastWeekStart}〜${ranges.lastWeekEnd} ／ 今週 ${ranges.thisWeekStart}〜${ranges.thisWeekEnd}）`;
+    const visitCfgFound = !!(data.reportConfig && data.reportConfig.baseline && Object.keys(data.reportConfig.baseline).length>0);
+    document.getElementById('autoFillStatus').innerHTML =
+      `反映済み（前週 ${ranges.lastWeekStart}〜${ranges.lastWeekEnd} ／ 今週 ${ranges.thisWeekStart}〜${ranges.thisWeekEnd}）<br>` +
+      `診断：訪問録の記録 ${data.visits.length}件取得 ／ 設定(reportConfig) ${visitCfgFound ? '取得OK' : '見つかりません'} ／ 飲みメモの記録 ${data.events.length}件取得`;
     toast('訪問録・飲みメモの週報を反映しました');
   }catch(e){
     console.error(e);
