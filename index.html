@@ -1265,10 +1265,10 @@ function buildFullEmailHtml(){
 
   const monoStyle = "font-family:'MS Gothic','ＭＳ ゴシック',monospace;font-size:13px;line-height:1.7;";
 
-  let html = `<div style="font-family:sans-serif;">`;
+  let html = `<div style="${monoStyle}">`;
   html += `<p>ささきのささやきVol.${escHtml(vol)}　～${escHtml(title)}～<br>${escHtml(greeting)}</p>`;
   html += `<div>${bodyHtml}</div>`;
-  html += `<div style="${monoStyle}">`;
+  html += `<div>`;
   html += blockTextToHtmlBoldLabel(buildVisitBlockText(visitRows, dateStr, iss.id, iss), '■前週の行動履歴') + '<br><br>';
   html += blockTextToHtmlBoldLabel(buildScheduleBlockText(sched), '■今週の行動予定') + '<br><br>';
   html += blockTextToHtmlBoldLabel(buildDrinkBlockText(drinkRows, dateStr, iss.id, iss), '■前週の飲み') ;
@@ -1308,10 +1308,10 @@ function buildFullEmailHtmlForIssue(iss){
 
   const monoStyle = "font-family:'MS Gothic','ＭＳ ゴシック',monospace;font-size:13px;line-height:1.7;";
 
-  let html = `<div style="font-family:sans-serif;">`;
+  let html = `<div style="${monoStyle}">`;
   html += `<p>ささきのささやきVol.${escHtml(vol)}　～${escHtml(title)}～<br>${escHtml(greeting)}</p>`;
   html += `<div>${bodyHtml}</div>`;
-  html += `<div style="${monoStyle}">`;
+  html += `<div>`;
   html += blockTextToHtmlBoldLabel(buildVisitBlockText(visitRows, dateStr, iss.id, iss), '■前週の行動履歴') + '<br><br>';
   html += blockTextToHtmlBoldLabel(buildScheduleBlockText(sched), '■今週の行動予定') + '<br><br>';
   html += blockTextToHtmlBoldLabel(buildDrinkBlockText(drinkRows, dateStr, iss.id, iss), '■前週の飲み') ;
