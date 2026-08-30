@@ -1240,9 +1240,15 @@ function buildDrinkBlockText(rows, dateStr, issId, selfIssue){
 function textBlockToHtml(text){
   return text.split('\n').map(l=>escHtml(l)).join('<br>');
 }
-function blockTextToHtmlBoldHeader(text){
+function blockTextToHtmlBoldLabel(text, label){
   const lines = text.split('\n');
-  const first = `<b>${escHtml(lines[0])}</b>`;
+  let first;
+  if(label && lines[0].startsWith(label)){
+    const rest = lines[0].slice(label.length);
+    first = `<b>${escHtml(label)}</b>${escHtml(rest)}`;
+  }else{
+    first = escHtml(lines[0]);
+  }
   const rest = lines.slice(1).map(l=>escHtml(l));
   return [first, ...rest].join('<br>');
 }
@@ -1263,23 +1269,29 @@ function buildFullEmailHtml(){
   html += `<p>ささきのささやきVol.${escHtml(vol)}　～${escHtml(title)}～<br>${escHtml(greeting)}</p>`;
   html += `<div>${bodyHtml}</div>`;
   html += `<div style="${monoStyle}">`;
-  html += blockTextToHtmlBoldHeader(buildVisitBlockText(visitRows, dateStr, iss.id, iss)) + '<br><br>';
-  html += blockTextToHtmlBoldHeader(buildScheduleBlockText(sched)) + '<br><br>';
-  html += blockTextToHtmlBoldHeader(buildDrinkBlockText(drinkRows, dateStr, iss.id, iss)) ;
+  html += blockTextToHtmlBoldLabel(buildVisitBlockText(visitRows, dateStr, iss.id, iss), '■前週の行動履歴') + '<br><br>';
+  html += blockTextToHtmlBoldLabel(buildScheduleBlockText(sched), '■今週の行動予定') + '<br><br>';
+  html += blockTextToHtmlBoldLabel(buildDrinkBlockText(drinkRows, dateStr, iss.id, iss), '■前週の飲み') ;
   html += `</div>`;
   html += `<p>今週もよろしくお願いいたします。</p>`;
   html += `</div>`;
   return html;
 }
 function htmlToPlainText(html){
-  let t = html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|h1|h2|h3|h4|h5|h6|li|tr)>/gi, '\n\n')
-    .replace(/<li[^>]*>/gi, '・');
   const tmp = document.createElement('div');
-  tmp.innerHTML = t;
-  const raw = tmp.textContent || '';
-  return raw.replace(/\r/g,'').replace(/\n[ \t]+/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+  tmp.style.position = 'fixed';
+  tmp.style.left = '-99999px';
+  tmp.style.top = '0';
+  tmp.style.width = '600px';
+  tmp.innerHTML = html;
+  document.body.appendChild(tmp);
+  let raw;
+  try{
+    raw = tmp.innerText;
+  }finally{
+    document.body.removeChild(tmp);
+  }
+  return (raw || '').replace(/\r/g,'').replace(/\n{3,}/g,'\n\n').trim();
 }
 function buildFullEmailText(){
   return htmlToPlainText(buildFullEmailHtml());
@@ -1300,9 +1312,9 @@ function buildFullEmailHtmlForIssue(iss){
   html += `<p>ささきのささやきVol.${escHtml(vol)}　～${escHtml(title)}～<br>${escHtml(greeting)}</p>`;
   html += `<div>${bodyHtml}</div>`;
   html += `<div style="${monoStyle}">`;
-  html += blockTextToHtmlBoldHeader(buildVisitBlockText(visitRows, dateStr, iss.id, iss)) + '<br><br>';
-  html += blockTextToHtmlBoldHeader(buildScheduleBlockText(sched)) + '<br><br>';
-  html += blockTextToHtmlBoldHeader(buildDrinkBlockText(drinkRows, dateStr, iss.id, iss)) ;
+  html += blockTextToHtmlBoldLabel(buildVisitBlockText(visitRows, dateStr, iss.id, iss), '■前週の行動履歴') + '<br><br>';
+  html += blockTextToHtmlBoldLabel(buildScheduleBlockText(sched), '■今週の行動予定') + '<br><br>';
+  html += blockTextToHtmlBoldLabel(buildDrinkBlockText(drinkRows, dateStr, iss.id, iss), '■前週の飲み') ;
   html += `</div>`;
   html += `<p>今週もよろしくお願いいたします。</p>`;
   html += `</div>`;
