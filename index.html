@@ -448,6 +448,10 @@
       <label>飲みの注記（■前週の飲みの後ろに付く説明文）</label>
       <input type="text" id="cfg_drinkNote" placeholder="（[]内は2026.4からの累計、()内は今週の予定,【】内は2024平均,2025平均）">
     </div>
+    <div class="field" style="margin-bottom:14px;">
+      <label>イラストプロンプト（イラスト生成AIに渡す指示文）</label>
+      <textarea id="cfg_illustPrompt" rows="4" style="width:100%;border:1px solid var(--line);border-radius:3px;padding:9px 10px;font-size:14px;background:var(--paper);color:var(--ink);font-family:inherit;" placeholder="例：以下の文章の雰囲気に合う、水彩画風のやさしいイラストを1枚生成してください。"></textarea>
+    </div>
     <div class="field" style="margin-bottom:6px;">
       <label>行動履歴の区分</label>
     </div>
@@ -500,6 +504,7 @@
     <div id="previewModalBox" style="background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--radius);padding:16px;font-size:13px;line-height:1.8;max-height:60vh;overflow-y:auto;"></div>
     <div class="sticky-actions">
       <button class="btn ghost" id="previewCloseBtn">閉じる</button>
+      <button class="btn ghost" id="previewIllustBtn">🎨 イラストプロンプト</button>
       <button class="btn fude" id="previewCopyBtn">📋 メール用にコピー</button>
       <button class="btn seal" id="previewEditBtn">編集する</button>
     </div>
@@ -599,6 +604,7 @@ const DEFAULT_DRINK_CATS = ['部内','本社内','社内','Ｇ内','ＯＢ等','
 const DEFAULT_GREETING = '社会インフラデザイン部の皆さま';
 const DEFAULT_VISIT_NOTE = '（[]内は2026.4からの累計、【】内は2025 1Q,2Q,3Q,4Qの各平均）';
 const DEFAULT_DRINK_NOTE = '（[]内は2026.4からの累計、()内は今週の予定,【】内は2024平均,2025平均）';
+const DEFAULT_ILLUST_PROMPT = '';
 const DAYS = [['mon','月'],['tue','火'],['wed','水'],['thu','木'],['fri','金'],['sat','土'],['sun','日']];
 
 let STATE = {
@@ -610,6 +616,7 @@ let STATE = {
     drinkCats: DEFAULT_DRINK_CATS.slice(),
     visitNote: DEFAULT_VISIT_NOTE,
     drinkNote: DEFAULT_DRINK_NOTE,
+    illustPrompt: DEFAULT_ILLUST_PROMPT,
   }
 };
 let currentIssueId = null;
@@ -642,6 +649,7 @@ function initFirebaseSync(){
       STATE.settings = STATE.settings || {greeting:DEFAULT_GREETING, visitCats:DEFAULT_VISIT_CATS.slice(), drinkCats:DEFAULT_DRINK_CATS.slice()};
       if(STATE.settings.visitNote === undefined) STATE.settings.visitNote = DEFAULT_VISIT_NOTE;
       if(STATE.settings.drinkNote === undefined) STATE.settings.drinkNote = DEFAULT_DRINK_NOTE;
+      if(STATE.settings.illustPrompt === undefined) STATE.settings.illustPrompt = DEFAULT_ILLUST_PROMPT;
       saveLocal();
       renderList();
       if(!document.getElementById('ideaView').classList.contains('hidden')) renderIdeaList();
@@ -1084,6 +1092,25 @@ function buildDrinkStatsFromSource(events, weeklySettings, lastWeekStart, lastWe
   return { cats, cumStart, year1, year2 };
 }
 
+function buildScheduleFromVisits(visits, thisWeekStart, thisWeekEnd){
+  const byDate = {};
+  visits.forEach(v=>{
+    if(v && v.date && v.place && v.date>=thisWeekStart && v.date<=thisWeekEnd){
+      if(!byDate[v.date]) byDate[v.date] = [];
+      byDate[v.date].push(v);
+    }
+  });
+  const dowKeyMap = {0:'sun',1:'mon',2:'tue',3:'wed',4:'thu',5:'fri',6:'sat'};
+  const sched = {};
+  Object.keys(byDate).forEach(d=>{
+    byDate[d].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+    const dow = new Date(d+'T00:00:00').getDay();
+    const key = dowKeyMap[dow];
+    sched[key] = byDate[d].map(v=>v.place).join('→');
+  });
+  return sched;
+}
+
 async function fetchLinkedData(){
   const [visitSnap, visitCfgSnap, nomiSnap, nomiCfgSnap] = await Promise.all([
     db.ref('visitLog/visits').once('value'),
@@ -1128,6 +1155,12 @@ document.getElementById('autoFillBtn').addEventListener('click', async ()=>{
     });
     renderDrinkTable(iss);
 
+    const currentSched = {}; DAYS.forEach(([k])=>{ currentSched[k] = document.getElementById('day_'+k).value; });
+    const schedFromVisits = buildScheduleFromVisits(data.visits, ranges.thisWeekStart, ranges.thisWeekEnd);
+    iss.schedule = Object.assign({}, currentSched, schedFromVisits);
+    renderSchedule(iss);
+    const schedDaysFilled = Object.keys(schedFromVisits).length;
+
     const [vy, vm] = (visitStats.cumStart||'2026-04-01').split('-');
     STATE.settings.visitNote = `（[]内は${Number(vy)}.${Number(vm)}からの累計、【】内は${visitStats.baselineYear||''} 1Q,2Q,3Q,4Qの各平均）`;
     const [dy, dm] = (drinkStats.cumStart||'2026-04-01').split('-');
@@ -1135,9 +1168,12 @@ document.getElementById('autoFillBtn').addEventListener('click', async ()=>{
 
     updatePreview();
     const visitCfgFound = !!(data.reportConfig && data.reportConfig.baseline && Object.keys(data.reportConfig.baseline).length>0);
+    const visitsInRange = data.visits.filter(v=>v && v.date && v.date>=ranges.lastWeekStart && v.date<=ranges.lastWeekEnd).length;
+    const distinctCats = Array.from(new Set(data.visits.map(v=>v && v.category).filter(Boolean))).join('、') || '（カテゴリ情報なし）';
     document.getElementById('autoFillStatus').innerHTML =
       `反映済み（前週 ${ranges.lastWeekStart}〜${ranges.lastWeekEnd} ／ 今週 ${ranges.thisWeekStart}〜${ranges.thisWeekEnd}）<br>` +
-      `診断：訪問録の記録 ${data.visits.length}件取得 ／ 設定(reportConfig) ${visitCfgFound ? '取得OK' : '見つかりません'} ／ 飲みメモの記録 ${data.events.length}件取得`;
+      `診断：訪問録の記録 ${data.visits.length}件取得（うち前週該当 ${visitsInRange}件、今週の予定へ反映 ${schedDaysFilled}日分） ／ 設定(reportConfig) ${visitCfgFound ? '取得OK' : '見つかりません'} ／ 飲みメモの記録 ${data.events.length}件取得<br>` +
+      `訪問録のカテゴリ一覧：${distinctCats}`;
     toast('訪問録・飲みメモの週報を反映しました');
   }catch(e){
     console.error(e);
@@ -1204,6 +1240,12 @@ function buildDrinkBlockText(rows, dateStr, issId, selfIssue){
 function textBlockToHtml(text){
   return text.split('\n').map(l=>escHtml(l)).join('<br>');
 }
+function blockTextToHtmlBoldHeader(text){
+  const lines = text.split('\n');
+  const first = `<b>${escHtml(lines[0])}</b>`;
+  const rest = lines.slice(1).map(l=>escHtml(l));
+  return [first, ...rest].join('<br>');
+}
 function buildFullEmailHtml(){
   const iss = currentIssue();
   const bodyHtml = document.getElementById('bodyEditor').innerHTML;
@@ -1221,18 +1263,26 @@ function buildFullEmailHtml(){
   html += `<p>ささきのささやきVol.${escHtml(vol)}　～${escHtml(title)}～<br>${escHtml(greeting)}</p>`;
   html += `<div>${bodyHtml}</div>`;
   html += `<div style="${monoStyle}">`;
-  html += textBlockToHtml(buildVisitBlockText(visitRows, dateStr, iss.id, iss)) + '<br><br>';
-  html += textBlockToHtml(buildScheduleBlockText(sched)) + '<br><br>';
-  html += textBlockToHtml(buildDrinkBlockText(drinkRows, dateStr, iss.id, iss)) ;
+  html += blockTextToHtmlBoldHeader(buildVisitBlockText(visitRows, dateStr, iss.id, iss)) + '<br><br>';
+  html += blockTextToHtmlBoldHeader(buildScheduleBlockText(sched)) + '<br><br>';
+  html += blockTextToHtmlBoldHeader(buildDrinkBlockText(drinkRows, dateStr, iss.id, iss)) ;
   html += `</div>`;
   html += `<p>今週もよろしくお願いいたします。</p>`;
   html += `</div>`;
   return html;
 }
+function htmlToPlainText(html){
+  let t = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|h1|h2|h3|h4|h5|h6|li|tr)>/gi, '\n\n')
+    .replace(/<li[^>]*>/gi, '・');
+  const tmp = document.createElement('div');
+  tmp.innerHTML = t;
+  const raw = tmp.textContent || '';
+  return raw.replace(/\r/g,'').replace(/\n[ \t]+/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+}
 function buildFullEmailText(){
-  const div = document.createElement('div');
-  div.innerHTML = buildFullEmailHtml();
-  return div.innerText;
+  return htmlToPlainText(buildFullEmailHtml());
 }
 function buildFullEmailHtmlForIssue(iss){
   const bodyHtml = iss.bodyHtml || '';
@@ -1250,9 +1300,9 @@ function buildFullEmailHtmlForIssue(iss){
   html += `<p>ささきのささやきVol.${escHtml(vol)}　～${escHtml(title)}～<br>${escHtml(greeting)}</p>`;
   html += `<div>${bodyHtml}</div>`;
   html += `<div style="${monoStyle}">`;
-  html += textBlockToHtml(buildVisitBlockText(visitRows, dateStr, iss.id, iss)) + '<br><br>';
-  html += textBlockToHtml(buildScheduleBlockText(sched)) + '<br><br>';
-  html += textBlockToHtml(buildDrinkBlockText(drinkRows, dateStr, iss.id, iss)) ;
+  html += blockTextToHtmlBoldHeader(buildVisitBlockText(visitRows, dateStr, iss.id, iss)) + '<br><br>';
+  html += blockTextToHtmlBoldHeader(buildScheduleBlockText(sched)) + '<br><br>';
+  html += blockTextToHtmlBoldHeader(buildDrinkBlockText(drinkRows, dateStr, iss.id, iss)) ;
   html += `</div>`;
   html += `<p>今週もよろしくお願いいたします。</p>`;
   html += `</div>`;
@@ -1297,10 +1347,22 @@ document.getElementById('previewCopyBtn').addEventListener('click', async ()=>{
   const iss = STATE.issues.find(i=>i.id===previewIssueId);
   if(!iss) return;
   const html = buildFullEmailHtmlForIssue(iss);
-  const div = document.createElement('div');
-  div.innerHTML = html;
-  const text = div.innerText;
+  const text = htmlToPlainText(html);
   await copyHtmlToClipboard(html, text, document.getElementById('previewModalBox'));
+});
+document.getElementById('previewIllustBtn').addEventListener('click', async ()=>{
+  const iss = STATE.issues.find(i=>i.id===previewIssueId);
+  if(!iss) return;
+  const prompt = STATE.settings.illustPrompt || '';
+  const bodyText = htmlToPlainText(iss.bodyHtml || '');
+  const combined = (prompt ? prompt + '\n\n' : '') + bodyText;
+  try{
+    await navigator.clipboard.writeText(combined);
+    toast('イラストプロンプトをコピーしました');
+  }catch(err){
+    console.error(err);
+    toast('コピーに失敗しました');
+  }
 });
 
 /* ---------- save ---------- */
@@ -1316,6 +1378,7 @@ document.getElementById('settingsBtn').addEventListener('click', ()=>{
   document.getElementById('cfg_greeting').value = STATE.settings.greeting || DEFAULT_GREETING;
   document.getElementById('cfg_visitNote').value = STATE.settings.visitNote || DEFAULT_VISIT_NOTE;
   document.getElementById('cfg_drinkNote').value = STATE.settings.drinkNote || DEFAULT_DRINK_NOTE;
+  document.getElementById('cfg_illustPrompt').value = STATE.settings.illustPrompt || DEFAULT_ILLUST_PROMPT;
   renderCfgCatList('catModalListVisit', STATE.settings.visitCats);
   renderCfgCatList('catModalListDrink', STATE.settings.drinkCats);
   document.getElementById('settingsModal').classList.remove('hidden');
@@ -1350,6 +1413,7 @@ document.getElementById('settingsSaveBtn').addEventListener('click', ()=>{
   STATE.settings.greeting = document.getElementById('cfg_greeting').value.trim() || DEFAULT_GREETING;
   STATE.settings.visitNote = document.getElementById('cfg_visitNote').value;
   STATE.settings.drinkNote = document.getElementById('cfg_drinkNote').value;
+  STATE.settings.illustPrompt = document.getElementById('cfg_illustPrompt').value;
   STATE.settings.visitCats = Array.from(document.querySelectorAll('#catModalListVisit input')).map(i=>i.value.trim()).filter(Boolean);
   STATE.settings.drinkCats = Array.from(document.querySelectorAll('#catModalListDrink input')).map(i=>i.value.trim()).filter(Boolean);
   persist();
