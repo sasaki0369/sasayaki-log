@@ -1275,7 +1275,7 @@ function buildFullEmailHtml(){
   html += blockTextToHtmlBoldLabel(buildScheduleBlockText(sched), '■今週の行動予定') + blankPara;
   html += blockTextToHtmlBoldLabel(buildDrinkBlockText(drinkRows, dateStr, iss.id, iss), '■前週の飲み') ;
   html += `</div>`;
-  html += `<p>今週もよろしくお願いいたします。</p>`;
+  html += `<div>&nbsp;</div><div>今週もよろしくお願いいたします。</div>`;
   html += `</div>`;
   return html;
 }
@@ -1320,7 +1320,7 @@ function buildFullEmailHtmlForIssue(iss){
   html += blockTextToHtmlBoldLabel(buildScheduleBlockText(sched), '■今週の行動予定') + blankPara;
   html += blockTextToHtmlBoldLabel(buildDrinkBlockText(drinkRows, dateStr, iss.id, iss), '■前週の飲み') ;
   html += `</div>`;
-  html += `<p>今週もよろしくお願いいたします。</p>`;
+  html += `<div>&nbsp;</div><div>今週もよろしくお願いいたします。</div>`;
   html += `</div>`;
   return html;
 }
