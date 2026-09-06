@@ -704,7 +704,7 @@ function todayStr(){
 /* ---------- issue model ---------- */
 const DEFAULT_BODY_TEXT = 'お世話になります。\n佐々木です。\n\n今週のささやきです。\n\n■先週感じたこと/考えたこと';
 function plainTextToParagraphsHtml(text){
-  return text.split('\n\n').map(para => '<p>' + para.split('\n').map(escHtml).join('<br>') + '</p>').join('');
+  return text.split('\n').map(line => `<div>${line ? escHtml(line) : '&nbsp;'}</div>`).join('');
 }
 function nextVolNumber(){
   let max = 0;
@@ -1242,15 +1242,16 @@ function textBlockToHtml(text){
 }
 function blockTextToHtmlBoldLabel(text, label){
   const lines = text.split('\n');
-  let first;
-  if(label && lines[0].startsWith(label)){
-    const rest = lines[0].slice(label.length);
-    first = `<b>${escHtml(label)}</b>${escHtml(rest)}`;
-  }else{
-    first = escHtml(lines[0]);
-  }
-  const rest = lines.slice(1).map(l=>escHtml(l));
-  return [first, ...rest].join('<br>');
+  return lines.map((line, idx)=>{
+    let content;
+    if(idx===0 && label && line.startsWith(label)){
+      const rest = line.slice(label.length);
+      content = `<b>${escHtml(label)}</b>${escHtml(rest)}`;
+    }else{
+      content = escHtml(line) || '&nbsp;';
+    }
+    return `<div>${content}</div>`;
+  }).join('');
 }
 function buildFullEmailHtml(){
   const iss = currentIssue();
@@ -1266,11 +1267,12 @@ function buildFullEmailHtml(){
   const monoStyle = "font-family:'MS Gothic','ＭＳ ゴシック',monospace;font-size:13px;line-height:1.7;";
 
   let html = `<div style="${monoStyle}">`;
-  html += `<p>ささきのささやきVol.${escHtml(vol)}　～${escHtml(title)}～<br>${escHtml(greeting)}</p>`;
+  html += `<div>ささきのささやきVol.${escHtml(vol)}　～${escHtml(title)}～</div><div>${escHtml(greeting)}</div><div>&nbsp;</div>`;
   html += `<div>${bodyHtml}</div>`;
   html += `<div>`;
-  html += blockTextToHtmlBoldLabel(buildVisitBlockText(visitRows, dateStr, iss.id, iss), '■前週の行動履歴') + '<br><br>';
-  html += blockTextToHtmlBoldLabel(buildScheduleBlockText(sched), '■今週の行動予定') + '<br><br>';
+  const blankPara = '<div>&nbsp;</div>';
+  html += blockTextToHtmlBoldLabel(buildVisitBlockText(visitRows, dateStr, iss.id, iss), '■前週の行動履歴') + blankPara;
+  html += blockTextToHtmlBoldLabel(buildScheduleBlockText(sched), '■今週の行動予定') + blankPara;
   html += blockTextToHtmlBoldLabel(buildDrinkBlockText(drinkRows, dateStr, iss.id, iss), '■前週の飲み') ;
   html += `</div>`;
   html += `<p>今週もよろしくお願いいたします。</p>`;
@@ -1291,7 +1293,8 @@ function htmlToPlainText(html){
   }finally{
     document.body.removeChild(tmp);
   }
-  return (raw || '').replace(/\r/g,'').replace(/\n{3,}/g,'\n\n').trim();
+  const cleaned = (raw || '').replace(/\r/g,'').replace(/[ \t\u00a0]+\n/g,'\n').replace(/^[ \t\u00a0]+$/gm,'').replace(/\n{3,}/g,'\n\n').trim();
+  return cleaned;
 }
 function buildFullEmailText(){
   return htmlToPlainText(buildFullEmailHtml());
@@ -1309,11 +1312,12 @@ function buildFullEmailHtmlForIssue(iss){
   const monoStyle = "font-family:'MS Gothic','ＭＳ ゴシック',monospace;font-size:13px;line-height:1.7;";
 
   let html = `<div style="${monoStyle}">`;
-  html += `<p>ささきのささやきVol.${escHtml(vol)}　～${escHtml(title)}～<br>${escHtml(greeting)}</p>`;
+  html += `<div>ささきのささやきVol.${escHtml(vol)}　～${escHtml(title)}～</div><div>${escHtml(greeting)}</div><div>&nbsp;</div>`;
   html += `<div>${bodyHtml}</div>`;
   html += `<div>`;
-  html += blockTextToHtmlBoldLabel(buildVisitBlockText(visitRows, dateStr, iss.id, iss), '■前週の行動履歴') + '<br><br>';
-  html += blockTextToHtmlBoldLabel(buildScheduleBlockText(sched), '■今週の行動予定') + '<br><br>';
+  const blankPara = '<div>&nbsp;</div>';
+  html += blockTextToHtmlBoldLabel(buildVisitBlockText(visitRows, dateStr, iss.id, iss), '■前週の行動履歴') + blankPara;
+  html += blockTextToHtmlBoldLabel(buildScheduleBlockText(sched), '■今週の行動予定') + blankPara;
   html += blockTextToHtmlBoldLabel(buildDrinkBlockText(drinkRows, dateStr, iss.id, iss), '■前週の飲み') ;
   html += `</div>`;
   html += `<p>今週もよろしくお願いいたします。</p>`;
@@ -1440,23 +1444,15 @@ const DAY_MAP = {'月':'mon','火':'tue','水':'wed','木':'thu','金':'fri','�
 function textToBodyHtml(text){
   const lines = text.split('\n');
   let html = '';
-  let paraBuf = [];
-  function flushPara(){
-    if(paraBuf.length){
-      html += '<p>' + paraBuf.map(l=>escHtml(l)).join('<br>') + '</p>';
-      paraBuf = [];
-    }
-  }
   lines.forEach(line=>{
     const t = line.trim();
-    if(t === ''){ flushPara(); return; }
+    if(t === ''){ html += '<div>&nbsp;</div>'; return; }
     const h3m = t.match(/^■\s*(.+)$/);
     const h4m = t.match(/^【(.+)】$/);
-    if(h3m){ flushPara(); html += `<h3>${escHtml(h3m[1])}</h3>`; return; }
-    if(h4m){ flushPara(); html += `<h4>【${escHtml(h4m[1])}】</h4>`; return; }
-    paraBuf.push(t);
+    if(h3m){ html += `<h3>${escHtml(h3m[1])}</h3>`; return; }
+    if(h4m){ html += `<h4>【${escHtml(h4m[1])}】</h4>`; return; }
+    html += `<div>${escHtml(t)}</div>`;
   });
-  flushPara();
   return html;
 }
 
