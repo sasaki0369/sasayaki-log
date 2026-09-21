@@ -593,6 +593,7 @@ async function tryInitFirebase(){
           authReady = true;
           fbEnabled = true;
           initFirebaseSync();
+          cleanupLocalIllustrationCache();
           document.getElementById('syncDot').className = 'on';
         }
       }else{
@@ -1885,6 +1886,19 @@ let currentIllustration = null;
 let currentIllustrationIssueId = null;
 
 function illustLocalKey(issueId){ return 'sasayaki_illust_' + issueId; }
+function cleanupLocalIllustrationCache(){
+  try{
+    const toRemove = [];
+    for(let i=0;i<localStorage.length;i++){
+      const key = localStorage.key(i);
+      if(key && key.indexOf('sasayaki_illust_')===0) toRemove.push(key);
+    }
+    if(toRemove.length>0){
+      toRemove.forEach(k=>localStorage.removeItem(k));
+      console.info('Firebase接続中のため、ローカルの挿絵キャッシュ'+toRemove.length+'件を削除しました');
+    }
+  }catch(e){ console.warn('illustration cache cleanup failed', e); }
+}
 
 function fileToDataUrl(file){
   return new Promise((resolve, reject)=>{
@@ -1938,13 +1952,16 @@ async function loadIllustrationForIssue(issueId){
 
 function persistIllustration(issueId, data){
   currentIllustration = data;
-  try{
-    if(data) localStorage.setItem(illustLocalKey(issueId), JSON.stringify(data));
-    else localStorage.removeItem(illustLocalKey(issueId));
-  }catch(e){ console.warn('localStorage save failed (quota?)', e); }
   if(fbEnabled && db){
+    // Firebaseが有効な場合はそちらを正として使い、容量を圧迫するローカル二重保存はしない
     const ref = db.ref('sasayakiLog/illustrations/'+issueId);
     (data ? ref.set(data) : ref.remove()).catch(e=>console.warn('illustration sync failed', e));
+    try{ localStorage.removeItem(illustLocalKey(issueId)); }catch(e){}
+  }else{
+    try{
+      if(data) localStorage.setItem(illustLocalKey(issueId), JSON.stringify(data));
+      else localStorage.removeItem(illustLocalKey(issueId));
+    }catch(e){ console.warn('localStorage save failed (quota?)', e); }
   }
   renderIllustrationUI();
 }
