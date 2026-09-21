@@ -652,7 +652,12 @@ function loadLocal(){
   }catch(e){}
 }
 function saveLocal(){
-  localStorage.setItem('sasayaki_log_state', JSON.stringify(STATE));
+  try{
+    localStorage.setItem('sasayaki_log_state', JSON.stringify(STATE));
+  }catch(e){
+    console.warn('saveLocal failed (storage quota?)', e);
+    toast('保存容量の上限に達したため、この端末への保存に失敗しました。本文に大きな画像が貼り付けられていないかご確認ください。');
+  }
 }
 function pushToFirebase(){
   if(!fbEnabled) return;
@@ -858,6 +863,11 @@ document.getElementById('previewEditBtn').addEventListener('click', ()=>{
 
 function currentIssue(){ return STATE.issues.find(i=>i.id===currentIssueId); }
 
+function sanitizeBodyHtml(html){
+  // 本文に data: URI 画像が直接貼り付けられた場合、保存容量を圧迫するため除去する
+  // （画像は「挿絵」機能側で管理する）
+  return html.replace(/<img[^>]*src=["']data:[^"']*["'][^>]*>/gi, '');
+}
 function collectForm(){
   const iss = currentIssue();
   if(!iss) return;
@@ -865,7 +875,7 @@ function collectForm(){
   iss.date = document.getElementById('f_date').value;
   iss.title = document.getElementById('f_title').value.trim();
   iss.greeting = document.getElementById('f_greeting').value.trim();
-  iss.bodyHtml = document.getElementById('bodyEditor').innerHTML;
+  iss.bodyHtml = sanitizeBodyHtml(document.getElementById('bodyEditor').innerHTML);
   iss.visit = readTable('visitTable');
   iss.drink = readTable('drinkTable');
   iss.schedule = {};
@@ -1019,6 +1029,22 @@ document.querySelectorAll('.rt-toolbar button[data-cmd]').forEach(btn=>{
   });
 });
 document.getElementById('bodyEditor').addEventListener('input', updatePreview);
+document.getElementById('bodyEditor').addEventListener('paste', (e)=>{
+  const items = (e.clipboardData || window.clipboardData).items;
+  if(!items) return;
+  for(const item of items){
+    if(item.type && item.type.startsWith('image/')){
+      e.preventDefault();
+      const file = item.getAsFile();
+      const iss = currentIssue();
+      if(file && iss){
+        handleIllustFile(file, iss.id);
+        toast('画像は本文ではなく「挿絵」欄に保存しました');
+      }
+      break;
+    }
+  }
+});
 
 function openLinkModal(){
   document.getElementById('linkUrlInput').value = '';
