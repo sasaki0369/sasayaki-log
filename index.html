@@ -373,6 +373,22 @@
 
 
     <div class="sheet">
+      <div class="section-title">挿絵<span class="hint">AIで生成した画像を添付</span></div>
+      <div id="illustPreviewWrap" style="text-align:center;background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--radius);padding:12px;margin-bottom:10px;">
+        <img id="illustPreviewImg" style="max-width:100%;max-height:320px;border-radius:6px;display:none;">
+        <div id="illustEmptyHint" style="color:var(--ink-faint);font-size:12.5px;padding:20px 0;">画像未設定</div>
+      </div>
+      <input type="file" id="illustFileInput" accept="image/*" style="display:none;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn ghost sm" id="illustSelectBtn">📁 画像を選択</button>
+        <button type="button" class="btn ghost sm" id="illustDownloadBtn" disabled>⬇ ダウンロード（元の解像度）</button>
+        <button type="button" class="btn ghost sm" id="illustDeleteBtn" disabled>🗑 削除</button>
+      </div>
+      <div id="illustPasteArea" tabindex="0" style="margin-top:8px;border:1px dashed var(--line);border-radius:6px;padding:10px;font-size:11.5px;color:var(--ink-soft);text-align:center;">ここをタップしてから画像をペースト（Ctrl+V）することもできます</div>
+      <div id="illustStatus" style="font-size:11px;color:var(--ink-soft);margin-top:6px;"></div>
+    </div>
+
+    <div class="sheet">
       <div class="section-title">プレビュー</div>
       <div id="previewBox"></div>
     </div>
@@ -501,6 +517,12 @@
 <div class="modal-bg hidden" id="previewModal">
   <div class="modal">
     <h3 id="previewModalTitle">プレビュー</h3>
+    <div id="previewIllustWrap" style="text-align:center;margin-bottom:10px;display:none;">
+      <img id="previewIllustImg" style="max-width:100%;max-height:280px;border-radius:6px;border:1px solid var(--line);">
+      <div style="margin-top:6px;">
+        <button type="button" class="btn ghost sm" id="previewIllustDownloadBtn">⬇ 挿絵をダウンロード（元の解像度）</button>
+      </div>
+    </div>
     <div id="previewModalBox" style="background:var(--paper-deep);border:1px solid var(--line);border-radius:var(--radius);padding:16px;font-size:13px;line-height:1.8;max-height:60vh;overflow-y:auto;"></div>
     <div class="sticky-actions">
       <button class="btn ghost" id="previewCloseBtn">閉じる</button>
@@ -774,6 +796,7 @@ document.getElementById('issueList').addEventListener('click', e=>{
   if(act === 'del'){
     if(confirm('この号を削除しますか？元に戻せません。')){
       STATE.issues = STATE.issues.filter(i=>i.id!==id);
+      persistIllustration(id, null);
       persist(); renderList();
     }
   }
@@ -803,6 +826,7 @@ function openEditor(id){
   renderSchedule(iss);
   updateAutoFillStatus();
   updatePreview();
+  loadIllustrationForIssue(id);
   window.scrollTo(0,0);
 }
 function closeEditor(){
@@ -821,6 +845,7 @@ function openPreview(id){
   document.getElementById('previewModalTitle').textContent = `Vol.${iss.vol||'-'}　${iss.title||'（無題）'}`;
   document.getElementById('previewModalBox').innerHTML = buildFullEmailHtmlForIssue(iss);
   document.getElementById('previewModal').classList.remove('hidden');
+  loadIllustrationForIssue(id);
 }
 document.getElementById('previewCloseBtn').addEventListener('click', ()=>{
   document.getElementById('previewModal').classList.add('hidden');
@@ -1806,6 +1831,142 @@ document.getElementById('ideaEditSaveBtn').addEventListener('click', ()=>{
     renderIdeaList();
   }
   document.getElementById('ideaEditModal').classList.add('hidden');
+});
+
+/* ---------- 挿絵（号ごとの画像添付） ---------- */
+const ILLUST_MAX_BYTES = 8 * 1024 * 1024; // 8MB
+let currentIllustration = null;
+let currentIllustrationIssueId = null;
+
+function illustLocalKey(issueId){ return 'sasayaki_illust_' + issueId; }
+
+function fileToDataUrl(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = ()=>resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderIllustrationUI(){
+  const has = !!(currentIllustration && currentIllustration.dataUrl);
+
+  const img = document.getElementById('illustPreviewImg');
+  const hint = document.getElementById('illustEmptyHint');
+  const dlBtn = document.getElementById('illustDownloadBtn');
+  const delBtn = document.getElementById('illustDeleteBtn');
+  if(img){
+    if(has){ img.src = currentIllustration.dataUrl; img.style.display = 'inline-block'; hint.style.display = 'none'; }
+    else{ img.style.display = 'none'; hint.style.display = 'block'; }
+    dlBtn.disabled = !has;
+    delBtn.disabled = !has;
+  }
+
+  const pImg = document.getElementById('previewIllustImg');
+  const pWrap = document.getElementById('previewIllustWrap');
+  if(pImg){
+    if(has){ pImg.src = currentIllustration.dataUrl; pWrap.style.display = 'block'; }
+    else{ pWrap.style.display = 'none'; }
+  }
+}
+
+async function loadIllustrationForIssue(issueId){
+  currentIllustration = null;
+  currentIllustrationIssueId = issueId;
+  if(fbEnabled && db){
+    try{
+      const snap = await db.ref('sasayakiLog/illustrations/'+issueId).once('value');
+      const val = snap.val();
+      if(val) currentIllustration = val;
+    }catch(e){ console.warn('illustration fetch failed', e); }
+  }
+  if(!currentIllustration){
+    try{
+      const raw = localStorage.getItem(illustLocalKey(issueId));
+      if(raw) currentIllustration = JSON.parse(raw);
+    }catch(e){}
+  }
+  if(currentIllustrationIssueId === issueId) renderIllustrationUI();
+}
+
+function persistIllustration(issueId, data){
+  currentIllustration = data;
+  try{
+    if(data) localStorage.setItem(illustLocalKey(issueId), JSON.stringify(data));
+    else localStorage.removeItem(illustLocalKey(issueId));
+  }catch(e){ console.warn('localStorage save failed (quota?)', e); }
+  if(fbEnabled && db){
+    const ref = db.ref('sasayakiLog/illustrations/'+issueId);
+    (data ? ref.set(data) : ref.remove()).catch(e=>console.warn('illustration sync failed', e));
+  }
+  renderIllustrationUI();
+}
+
+async function handleIllustFile(file, issueId){
+  if(!file || !file.type.startsWith('image/')){ toast('画像ファイルを選択してください'); return; }
+  if(file.size > ILLUST_MAX_BYTES){ toast('画像サイズが大きすぎます（8MB以下にしてください）'); return; }
+  const statusEl = document.getElementById('illustStatus');
+  if(statusEl) statusEl.textContent = '保存中…';
+  try{
+    const dataUrl = await fileToDataUrl(file);
+    persistIllustration(issueId, {
+      dataUrl,
+      filename: file.name || ('illustration.' + (file.type.split('/')[1] || 'png')),
+      mimeType: file.type,
+      size: file.size,
+      updatedAt: Date.now()
+    });
+    toast('挿絵を保存しました');
+  }catch(e){
+    console.error(e);
+    toast('画像の読み込みに失敗しました');
+  }finally{
+    if(statusEl) statusEl.textContent = '';
+  }
+}
+
+function downloadIllustration(data){
+  if(!data || !data.dataUrl) return;
+  const a = document.createElement('a');
+  a.href = data.dataUrl;
+  a.download = data.filename || 'illustration.png';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+document.getElementById('illustSelectBtn').addEventListener('click', ()=>{
+  document.getElementById('illustFileInput').click();
+});
+document.getElementById('illustFileInput').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  const iss = currentIssue();
+  if(file && iss) handleIllustFile(file, iss.id);
+  e.target.value = '';
+});
+document.getElementById('illustDownloadBtn').addEventListener('click', ()=>{
+  downloadIllustration(currentIllustration);
+});
+document.getElementById('illustDeleteBtn').addEventListener('click', ()=>{
+  const iss = currentIssue();
+  if(!iss) return;
+  if(confirm('挿絵を削除しますか？')) persistIllustration(iss.id, null);
+});
+document.getElementById('illustPasteArea').addEventListener('paste', (e)=>{
+  const items = (e.clipboardData || window.clipboardData).items;
+  const iss = currentIssue();
+  if(!iss || !items) return;
+  for(const item of items){
+    if(item.type && item.type.startsWith('image/')){
+      const file = item.getAsFile();
+      handleIllustFile(file, iss.id);
+      break;
+    }
+  }
+});
+document.getElementById('previewIllustDownloadBtn').addEventListener('click', ()=>{
+  downloadIllustration(currentIllustration);
 });
 
 /* ---------- icon / manifest (embedded, no external files) ---------- */
