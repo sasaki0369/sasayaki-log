@@ -671,11 +671,17 @@ function loadLocal(){
   }
 }
 function saveLocal(){
+  if(fbEnabled){
+    // Firebaseが有効な場合、同じドメイン配下の他アプリと共有しているローカル保存容量を
+    // 圧迫しないよう、全データのローカル二重保存はしない（Firebaseのみを正とする）
+    try{ localStorage.removeItem('sasayaki_log_state'); }catch(e){}
+    return;
+  }
   try{
     localStorage.setItem('sasayaki_log_state', JSON.stringify(STATE));
   }catch(e){
     console.warn('saveLocal failed (storage quota?)', e);
-    toast('保存容量の上限に達したため、この端末への保存に失敗しました。本文に大きな画像が貼り付けられていないかご確認ください。');
+    toast('保存容量の上限に達したため、この端末への保存に失敗しました。他のアプリも含めた端末の保存容量をご確認ください。');
   }
 }
 function pushToFirebase(){
