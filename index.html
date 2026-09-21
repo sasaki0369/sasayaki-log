@@ -644,12 +644,30 @@ let STATE = {
 let currentIssueId = null;
 
 /* ---------- storage ---------- */
+function sanitizeBodyHtmlStr(html){
+  // 本文に data: URI 画像が直接貼り付けられた場合、保存容量を圧迫するため除去する
+  // （画像は「挿絵」機能側で管理する）
+  return (html||'').replace(/<img[^>]*src=["']data:[^"']*["'][^>]*>/gi, '');
+}
+function sanitizeAllIssuesBodyHtml(){
+  let changed = false;
+  (STATE.issues||[]).forEach(iss=>{
+    if(iss.bodyHtml && /<img[^>]*src=["']data:/i.test(iss.bodyHtml)){
+      iss.bodyHtml = sanitizeBodyHtmlStr(iss.bodyHtml);
+      changed = true;
+    }
+  });
+  return changed;
+}
 function loadLocal(){
   try{
     const raw = localStorage.getItem('sasayaki_log_state');
     if(raw) STATE = Object.assign(STATE, JSON.parse(raw));
     STATE.ideas = STATE.ideas || [];
   }catch(e){}
+  if(sanitizeAllIssuesBodyHtml()){
+    saveLocal();
+  }
 }
 function saveLocal(){
   try{
@@ -677,7 +695,9 @@ function initFirebaseSync(){
       if(STATE.settings.visitNote === undefined) STATE.settings.visitNote = DEFAULT_VISIT_NOTE;
       if(STATE.settings.drinkNote === undefined) STATE.settings.drinkNote = DEFAULT_DRINK_NOTE;
       if(STATE.settings.illustPrompt === undefined) STATE.settings.illustPrompt = DEFAULT_ILLUST_PROMPT;
+      const wasSanitized = sanitizeAllIssuesBodyHtml();
       saveLocal();
+      if(wasSanitized) pushToFirebase();
       renderList();
       if(!document.getElementById('ideaView').classList.contains('hidden')) renderIdeaList();
     }
