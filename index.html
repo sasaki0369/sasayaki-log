@@ -1981,11 +1981,59 @@ async function handleIllustFile(file, issueId){
       updatedAt: Date.now()
     });
     toast('挿絵を保存しました');
+    checkIllustrationQuotaAndCleanup();
   }catch(e){
     console.error(e);
     toast('画像の読み込みに失敗しました');
   }finally{
     if(statusEl) statusEl.textContent = '';
+  }
+}
+
+/* ---------- 挿絵の容量監視・自動削除 ----------
+   Firebaseの実際の使用量（他アプリ分含む）はクライアントから取得できないため、
+   「このアプリが把握している挿絵データの合計サイズ」を無料枠1GBの目安として扱う。
+   合計が閾値（既定：500MB＝1GBの半分）を超えたら、更新日時が古い挿絵から順に削除する。 */
+const ILLUST_QUOTA_THRESHOLD_BYTES = 500 * 1024 * 1024; // 500MB
+const ILLUST_QUOTA_TARGET_BYTES = 400 * 1024 * 1024;    // 削除後にここまで下げる（往復での頻発を防ぐ）
+let illustQuotaCheckRunning = false;
+
+async function checkIllustrationQuotaAndCleanup(){
+  if(!fbEnabled || !db) return; // ローカル保存のみの場合は対象外
+  if(illustQuotaCheckRunning) return;
+  illustQuotaCheckRunning = true;
+  try{
+    const snap = await db.ref('sasayakiLog/illustrations').once('value');
+    const all = snap.val() || {};
+    const entries = Object.keys(all).map(id=>{
+      const v = all[id] || {};
+      // base64は元データの約4/3倍になるため、実際の保存バイト数はそちらで概算
+      const approxBytes = v.dataUrl ? Math.ceil(v.dataUrl.length * 0.75) : (v.size || 0);
+      return { id, updatedAt: v.updatedAt || 0, bytes: approxBytes };
+    });
+    let total = entries.reduce((s,e)=>s+e.bytes, 0);
+    if(total <= ILLUST_QUOTA_THRESHOLD_BYTES) return;
+
+    entries.sort((a,b)=>a.updatedAt-b.updatedAt); // 古い順
+    const toDelete = [];
+    for(const e of entries){
+      if(total <= ILLUST_QUOTA_TARGET_BYTES) break;
+      toDelete.push(e.id);
+      total -= e.bytes;
+    }
+    if(toDelete.length === 0) return;
+
+    await Promise.all(toDelete.map(id=>db.ref('sasayakiLog/illustrations/'+id).remove().catch(e=>console.warn(e))));
+    toDelete.forEach(id=>{ try{ localStorage.removeItem(illustLocalKey(id)); }catch(e){} });
+    if(toDelete.includes(currentIllustrationIssueId)){
+      currentIllustration = null;
+      renderIllustrationUI();
+    }
+    toast(`挿絵の保存容量が上限に近づいたため、古い挿絵を${toDelete.length}件削除しました`);
+  }catch(e){
+    console.warn('illustration quota check failed', e);
+  }finally{
+    illustQuotaCheckRunning = false;
   }
 }
 
