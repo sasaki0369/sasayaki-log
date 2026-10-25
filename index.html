@@ -268,6 +268,14 @@
   </div>
 </div>
 
+<div class="modal-bg" id="syncGate" style="display:none;align-items:center;z-index:199;">
+  <div class="modal" style="max-width:300px;border-radius:12px;text-align:center;padding:30px 24px;">
+    <div style="width:40px;height:40px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--seal);margin:0 auto 16px;animation:spin 0.8s linear infinite;"></div>
+    <p style="font-size:12.5px;color:var(--ink-soft);margin:0;line-height:1.7;">データを同期しています…</p>
+  </div>
+</div>
+<style>@keyframes spin{to{transform:rotate(360deg);}}</style>
+
 <header class="app-head">
   <div class="brand">
     <div class="seal-badge">囁</div>
@@ -563,6 +571,9 @@ const firebaseConfig = {
   appId: "1:790653257684:web:71c67770c637fb2b8f3841"
 };
 let fbEnabled = false, db = null;
+let initialSyncDone = false; // true only after the FIRST real snapshot has been received from Firebase
+let lastKnownIssueCount = 0;  // highest issue count we've ever confirmed from the server (safety net)
+let lastKnownIdeaCount = 0;
 
 function loadScript(src){
   return new Promise((resolve, reject)=>{
@@ -592,14 +603,20 @@ async function tryInitFirebase(){
         if(!authReady){
           authReady = true;
           fbEnabled = true;
+          // データ消失防止: サーバーから最初のデータを受け取るまでは
+          // 画面操作をロックし、persist()が空のSTATEでサーバーを
+          // 上書きしてしまう事故を防ぐ
+          document.getElementById('syncGate').style.display = 'flex';
           initFirebaseSync();
           cleanupLocalIllustrationCache();
           document.getElementById('syncDot').className = 'on';
         }
       }else{
         fbEnabled = false;
+        initialSyncDone = false;
         document.getElementById('syncDot').className = 'off';
         document.getElementById('loginGate').style.display = 'flex';
+        document.getElementById('syncGate').style.display = 'none';
       }
     });
     firebase.auth().getRedirectResult().catch((err)=>{
@@ -686,8 +703,33 @@ function saveLocal(){
 }
 function pushToFirebase(){
   if(!fbEnabled) return;
+  // データ消失防止ガード①: サーバーから一度もデータを受け取っていない
+  // (initFirebaseSyncの初回スナップショット未到着)うちは絶対に書き込まない。
+  // これを破ると、ログイン直後の一瞬だけ発生する「ローカルの空STATE」で
+  // サーバー上の既存データを丸ごと消してしまう事故につながる。
+  if(!initialSyncDone){
+    console.warn('pushToFirebase skipped: initial sync not done yet');
+    return;
+  }
+  // データ消失防止ガード②: これまでサーバー上で確認できていたissues/ideasの
+  // 件数より大幅に減っている(特に0件になっている)場合は異常とみなし、
+  // 安全側に倒して書き込みを中止する。
+  const curIssues = (STATE.issues||[]).length;
+  const curIdeas = (STATE.ideas||[]).length;
+  if(lastKnownIssueCount > 0 && curIssues === 0){
+    console.error('pushToFirebase ABORTED: issues would be wiped from '+lastKnownIssueCount+' to 0');
+    toast('異常を検知したため同期を中止しました。ページを再読み込みしてサポートにご連絡ください。');
+    return;
+  }
+  if(lastKnownIdeaCount > 0 && curIdeas === 0){
+    console.error('pushToFirebase ABORTED: ideas would be wiped from '+lastKnownIdeaCount+' to 0');
+    toast('異常を検知したため同期を中止しました。ページを再読み込みしてサポートにご連絡ください。');
+    return;
+  }
   db.ref('sasayakiLog').set(STATE).then(()=>{
     document.getElementById('syncDot').className = 'on';
+    lastKnownIssueCount = Math.max(lastKnownIssueCount, curIssues);
+    lastKnownIdeaCount = Math.max(lastKnownIdeaCount, curIdeas);
   }).catch(()=>{ document.getElementById('syncDot').className = 'off'; });
 }
 function initFirebaseSync(){
@@ -702,11 +744,21 @@ function initFirebaseSync(){
       if(STATE.settings.visitNote === undefined) STATE.settings.visitNote = DEFAULT_VISIT_NOTE;
       if(STATE.settings.drinkNote === undefined) STATE.settings.drinkNote = DEFAULT_DRINK_NOTE;
       if(STATE.settings.illustPrompt === undefined) STATE.settings.illustPrompt = DEFAULT_ILLUST_PROMPT;
+      lastKnownIssueCount = Math.max(lastKnownIssueCount, STATE.issues.length);
+      lastKnownIdeaCount = Math.max(lastKnownIdeaCount, STATE.ideas.length);
+      initialSyncDone = true;
+      document.getElementById('syncGate').style.display = 'none';
       const wasSanitized = sanitizeAllIssuesBodyHtml();
       saveLocal();
       if(wasSanitized) pushToFirebase();
       renderList();
       if(!document.getElementById('ideaView').classList.contains('hidden')) renderIdeaList();
+    }else{
+      // サーバー側に本当にデータが存在しない(真に新規)場合のみここに来る。
+      // それ以外(通信エラー等)でnullになることはない。
+      initialSyncDone = true;
+      document.getElementById('syncGate').style.display = 'none';
+      renderList();
     }
     document.getElementById('syncDot').className = 'on';
   }, ()=>{ document.getElementById('syncDot').className = 'off'; });
