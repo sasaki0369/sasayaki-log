@@ -1262,10 +1262,16 @@ function buildScheduleFromVisits(visits, thisWeekStart, thisWeekEnd){
   const dowKeyMap = {0:'sun',1:'mon',2:'tue',3:'wed',4:'thu',5:'fri',6:'sat'};
   const sched = {};
   Object.keys(byDate).forEach(d=>{
-    byDate[d].sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+    const dayVisits = byDate[d];
+    dayVisits.sort(function(a,b){
+      const ao = (a.order!=null) ? a.order : Infinity;
+      const bo = (b.order!=null) ? b.order : Infinity;
+      if(ao!==bo) return ao-bo;
+      return (a.createdAt||0)-(b.createdAt||0);
+    });
     const dow = new Date(d+'T00:00:00').getDay();
     const key = dowKeyMap[dow];
-    sched[key] = byDate[d].map(v=>v.place).join('→');
+    sched[key] = dayVisits.map(v=>v.place).join('→');
   });
   return sched;
 }
