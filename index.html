@@ -611,8 +611,10 @@ async function tryInitFirebase(){
   if(!firebaseConfig.databaseURL) return;
   try{
     await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
-    await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js');
-    await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js');
+    await Promise.all([
+      loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js'),
+      loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js')
+    ]);
     firebase.initializeApp(firebaseConfig);
     db = firebase.database();
     let authReady = false;
@@ -751,7 +753,7 @@ function pushToFirebase(){
     toast('異常を検知したため同期を中止しました。ページを再読み込みしてサポートにご連絡ください。');
     return;
   }
-  db.ref('sasayakiLog').set(STATE).then(()=>{
+  db.ref('sasayakiLog').update({issues: STATE.issues, ideas: STATE.ideas, settings: STATE.settings}).then(()=>{
     document.getElementById('syncDot').className = 'on';
     lastKnownIssueCount = Math.max(lastKnownIssueCount, curIssues);
     lastKnownIdeaCount = Math.max(lastKnownIdeaCount, curIdeas);
@@ -759,34 +761,36 @@ function pushToFirebase(){
 }
 function initFirebaseSync(){
   if(!fbEnabled) return;
-  db.ref('sasayakiLog').on('value', snap=>{
-    const val = snap.val();
-    if(val){
-      STATE = val;
-      STATE.issues = STATE.issues || [];
-      STATE.ideas = STATE.ideas || [];
-      STATE.settings = STATE.settings || {greeting:DEFAULT_GREETING, visitCats:DEFAULT_VISIT_CATS.slice(), drinkCats:DEFAULT_DRINK_CATS.slice()};
+  // 起動を軽くするため、重い挿絵(illustrations)を含む sasayakiLog 全体ではなく
+  // issues / ideas / settings だけを個別に購読する。挿絵は号を開いたときだけ取得する。
+  const got = {issues:false, ideas:false, settings:false};
+  function toArr(v){ return !v ? [] : (Array.isArray(v) ? v.filter(x=>x!=null) : Object.values(v)); }
+  function onPart(key, val){
+    if(key === 'issues') STATE.issues = toArr(val);
+    else if(key === 'ideas') STATE.ideas = toArr(val);
+    else{
+      STATE.settings = val || {greeting:DEFAULT_GREETING, visitCats:DEFAULT_VISIT_CATS.slice(), drinkCats:DEFAULT_DRINK_CATS.slice()};
       if(STATE.settings.visitNote === undefined) STATE.settings.visitNote = DEFAULT_VISIT_NOTE;
       if(STATE.settings.drinkNote === undefined) STATE.settings.drinkNote = DEFAULT_DRINK_NOTE;
       if(STATE.settings.illustPrompt === undefined) STATE.settings.illustPrompt = DEFAULT_ILLUST_PROMPT;
-      lastKnownIssueCount = Math.max(lastKnownIssueCount, STATE.issues.length);
-      lastKnownIdeaCount = Math.max(lastKnownIdeaCount, STATE.ideas.length);
-      initialSyncDone = true;
-      document.getElementById('syncGate').style.display = 'none';
-      const wasSanitized = sanitizeAllIssuesBodyHtml();
-      saveLocal();
-      if(wasSanitized) pushToFirebase();
-      renderList();
-      if(!document.getElementById('ideaView').classList.contains('hidden')) renderIdeaList();
-    }else{
-      // サーバー側に本当にデータが存在しない(真に新規)場合のみここに来る。
-      // それ以外(通信エラー等)でnullになることはない。
-      initialSyncDone = true;
-      document.getElementById('syncGate').style.display = 'none';
-      renderList();
     }
+    got[key] = true;
+    if(!(got.issues && got.ideas && got.settings)) return; // 3つ揃うまで書き込み解禁しない
+    lastKnownIssueCount = Math.max(lastKnownIssueCount, STATE.issues.length);
+    lastKnownIdeaCount = Math.max(lastKnownIdeaCount, STATE.ideas.length);
+    const first = !initialSyncDone;
+    initialSyncDone = true;
+    document.getElementById('syncGate').style.display = 'none';
+    const wasSanitized = sanitizeAllIssuesBodyHtml();
+    if(first || wasSanitized){ if(wasSanitized) pushToFirebase(); }
+    renderList();
+    if(!document.getElementById('ideaView').classList.contains('hidden')) renderIdeaList();
     document.getElementById('syncDot').className = 'on';
-  }, ()=>{ document.getElementById('syncDot').className = 'off'; });
+  }
+  ['issues','ideas','settings'].forEach(key=>{
+    db.ref('sasayakiLog/'+key).on('value', snap=>onPart(key, snap.val()),
+      ()=>{ document.getElementById('syncDot').className = 'off'; });
+  });
 }
 function persist(){
   saveLocal();
