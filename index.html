@@ -757,7 +757,10 @@ function pushToFirebase(){
     document.getElementById('syncDot').className = 'on';
     lastKnownIssueCount = Math.max(lastKnownIssueCount, curIssues);
     lastKnownIdeaCount = Math.max(lastKnownIdeaCount, curIdeas);
-  }).catch(()=>{ document.getElementById('syncDot').className = 'off'; });
+  }).catch(()=>{
+    document.getElementById('syncDot').className = 'off';
+    toast('保存の同期に失敗しました。通信状況を確認してください');
+  });
 }
 function initFirebaseSync(){
   if(!fbEnabled) return;
@@ -947,7 +950,37 @@ function closeEditor(){
   document.getElementById('listView').classList.remove('hidden');
   renderList();
 }
-document.getElementById('backBtn').addEventListener('click', ()=>{ collectForm(); persist(); closeEditor(); });
+document.getElementById('backBtn').addEventListener('click', ()=>{ clearTimeout(autosaveTimer); collectForm(); persist(); closeEditor(); });
+
+/* ---------- 編集中の自動保存 ----------
+   「← 号一覧へ」を押すまで保存されないと、他の端末へ反映されない／アプリを閉じると失われるため、
+   入力が止まって2秒後に自動で保存・同期する。 */
+let autosaveTimer = null;
+function editorIsOpen(){ return currentIssueId && !document.getElementById('editView').classList.contains('hidden'); }
+function flushAutosave(){
+  clearTimeout(autosaveTimer); autosaveTimer = null;
+  if(!editorIsOpen() || !currentIssue()) return;
+  collectForm(); persist();
+}
+function scheduleAutosave(){
+  if(!editorIsOpen()) return;
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(flushAutosave, 2000);
+}
+['input','change'].forEach(ev=> document.getElementById('editView').addEventListener(ev, scheduleAutosave));
+
+/* ---------- 復帰時の再接続 ----------
+   スマホで長時間バックグラウンドにすると接続が眠ったままになり、他端末の更新を受け取れないことがあるため、
+   画面に戻った時／回線が復帰した時に接続を張り直す。 */
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){ hiddenAt = Date.now(); flushAutosave(); return; }
+  if(fbEnabled && db && hiddenAt && Date.now()-hiddenAt > 15000){
+    try{ db.goOffline(); db.goOnline(); }catch(e){}
+  }
+});
+window.addEventListener('pagehide', flushAutosave);
+window.addEventListener('online', ()=>{ if(fbEnabled && db){ try{ db.goOffline(); db.goOnline(); }catch(e){} } });
 
 /* ---------- read-only preview ---------- */
 let previewIssueId = null;
